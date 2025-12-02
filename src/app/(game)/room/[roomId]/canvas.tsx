@@ -10,6 +10,7 @@ export type Line = {
   points: DrawingPoint[];
   color: string;
   size: number;
+  isStartOfLine?: boolean; // Used to signal a new stroke to the server
 }
 type Fill = {
   tool: 'fill';
@@ -102,7 +103,7 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
     if (currentTool === 'pencil' || currentTool === 'eraser') {
       setIsDrawing(true);
       const color = currentTool === 'eraser' ? '#FFFFFF' : brushColor;
-      const newLine: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize };
+      const newLine: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize, isStartOfLine: true };
       
       // Optimistic update for the drawer
       applyAction(ctx, newLine);
@@ -135,11 +136,14 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
     const { x, y } = getCoords(e);
     
     const color = currentTool === 'eraser' ? '#FFFFFF' : brushColor;
-    // We emit an action with a single point. The server will aggregate them.
-    const drawAction: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize };
+    // We emit an action with a single point.
+    const drawAction: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize, isStartOfLine: false };
     
+    // Create a temporary line for local rendering to include the previous point
+    const tempLineForLocalRender = { ...drawAction, points: [{x,y}] };
+
     // Optimistic update for the drawer
-    applyAction(ctx, drawAction);
+    applyAction(ctx, tempLineForLocalRender);
 
     socket?.emit('drawingAction', { roomId, action: drawAction });
   };
@@ -147,22 +151,29 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
   const stopDrawing = () => {
     if (!isDrawing || !isDrawer) return;
     setIsDrawing(false);
+    
+    // We get a fresh context to ensure line joins are handled correctly after a pause
+    const ctx = getContext();
+    if(ctx) {
+        ctx.beginPath();
+    }
   };
 
   const drawSingleLine = (ctx: CanvasRenderingContext2D, line: Line) => {
     if (line.points.length === 0) return;
-    ctx.beginPath();
-    ctx.moveTo(line.points[0].x, line.points[0].y);
-
-    for (let i = 1; i < line.points.length; i++) {
-        const point = line.points[i];
-        ctx.lineTo(point.x, point.y);
-    }
     
     ctx.strokeStyle = line.tool === 'eraser' ? '#FFFFFF' : line.color;
     ctx.lineWidth = line.size;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+
+    if (line.isStartOfLine || line.points.length === 1) {
+        ctx.beginPath();
+        // For a single point (like from startDrawing), we draw a tiny circle
+        ctx.moveTo(line.points[0].x - 0.01, line.points[0].y);
+    }
+
+    ctx.lineTo(line.points[0].x, line.points[0].y);
     ctx.stroke();
   };
 

@@ -1,4 +1,7 @@
-import { type DrawingAction } from "@/app/(game)/room/[roomId]/canvas";
+import { type DrawingAction as CanvasDrawingAction } from "@/app/(game)/room/[roomId]/canvas";
+
+// Re-exporting with a more specific name if needed, or just use it directly
+export type DrawingAction = CanvasDrawingAction;
 
 export type Player = {
   id: string;

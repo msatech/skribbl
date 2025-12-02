@@ -75,7 +75,6 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     if(!socket) return;
     
     const handleRoomState = (newRoomState: Room) => {
-        // Full state update from server
         setRoom(newRoomState);
         if(newRoomState.gameState.status === 'waiting') {
             setChatMessages([]);
@@ -93,40 +92,30 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     const handleDrawingAction = (action: DrawingAction) => {
       setRoom(prevRoom => {
         if (!prevRoom) return null;
+        if (socket.id === prevRoom.gameState.currentDrawerId) return prevRoom;
+
         let newHistory = [...prevRoom.drawingHistory];
         
         if (action.tool === 'clear') {
           newHistory = [];
-        } else if (action.tool === 'undo') {
-           // Server now sends the full history on undo, so this path is less critical.
-           // This logic can be a simple pop for responsiveness before state sync.
-           newHistory.pop();
         } else if (action.tool === 'pencil' || action.tool === 'eraser') {
-          const lastAction = newHistory[newHistory.length - 1];
-          // If the last action was part of the same continuous stroke, append to its points.
-          if (isDrawingContinuousLine(lastAction, action)) {
-            (lastAction as Line).points.push(...(action as Line).points);
-          } else {
-            // Otherwise, it's a new line segment.
-            newHistory.push(action);
-          }
+            if (action.isStartOfLine) {
+                newHistory.push(action);
+            } else {
+                const lastAction = newHistory[newHistory.length - 1] as Line;
+                if (lastAction && lastAction.tool === action.tool && lastAction.color === action.color && lastAction.size === action.size) {
+                    lastAction.points.push(...action.points);
+                } else {
+                    newHistory.push(action);
+                }
+            }
         } else {
-          // For 'fill' and other single actions.
           newHistory.push(action);
         }
         
         return { ...prevRoom, drawingHistory: newHistory };
       });
     };
-
-    const isDrawingContinuousLine = (lastAction: DrawingAction | undefined, currentAction: DrawingAction): boolean => {
-        if (!lastAction || lastAction.tool !== currentAction.tool) return false;
-        if (lastAction.tool !== 'pencil' && lastAction.tool !== 'eraser') return false;
-        if (currentAction.tool !== 'pencil' && currentAction.tool !== 'eraser') return false;
-        // Check if color and size are the same for a continuous stroke
-        return lastAction.color === currentAction.color && lastAction.size === currentAction.size;
-    }
-
 
     const handleTimerUpdate = (time: number) => {
         setRoom(prev => prev ? { ...prev, gameState: {...prev.gameState, timer: time} } : null);

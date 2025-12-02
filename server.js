@@ -253,43 +253,46 @@ io.on('connection', (socket) => {
             room.drawingHistory = [];
         } else if (action.tool === 'undo') {
             // Find the last continuous line or single action and remove it
-            let lastActionIndex = -1;
-            for (let i = room.drawingHistory.length - 1; i >= 0; i--) {
-                const currentAction = room.drawingHistory[i];
-                if (currentAction.tool === 'pencil' || currentAction.tool === 'eraser') {
-                    // Check if it's the start of a new line segment
-                     if (currentAction.points.length > 0) {
-                        lastActionIndex = i;
-                        break;
-                     }
+            if (room.drawingHistory.length > 0) {
+                const lastAction = room.drawingHistory[room.drawingHistory.length - 1];
+                if (lastAction.tool === 'pencil' || lastAction.tool === 'eraser') {
+                    // This was the start of a new line, find where it began
+                    const { tool, color, size } = lastAction;
+                    let startIndex = room.drawingHistory.length - 1;
+                    while(
+                        startIndex > 0 &&
+                        room.drawingHistory[startIndex - 1].tool === tool &&
+                        room.drawingHistory[startIndex - 1].color === color &&
+                        room.drawingHistory[startIndex - 1].size === size
+                    ) {
+                        startIndex--;
+                    }
+                    room.drawingHistory.splice(startIndex);
                 } else {
-                     lastActionIndex = i;
-                     break;
+                    // It was a single action like 'fill'
+                    room.drawingHistory.pop();
                 }
             }
-             if (lastActionIndex !== -1) {
-                // If it's a line, remove all parts of that line
-                 const actionToRemove = room.drawingHistory[lastActionIndex];
-                 if(actionToRemove.tool === 'pencil' || actionToRemove.tool === 'eraser') {
-                     const color = actionToRemove.color;
-                     const size = actionToRemove.size;
-                     let i = lastActionIndex;
-                     while(i >= 0 && room.drawingHistory[i].tool === actionToRemove.tool && room.drawingHistory[i].color === color && room.drawingHistory[i].size === size) {
-                         i--;
-                     }
-                     room.drawingHistory.splice(i + 1);
-                 } else {
-                    room.drawingHistory.splice(lastActionIndex);
-                 }
-
-             }
              // We need to rebroadcast the whole history for a reliable undo
              io.to(roomId).emit('roomState', { ...room, drawingHistory: room.drawingHistory });
              return; // Prevent single action broadcast
         } else {
-            room.drawingHistory.push(action);
+             // For pencil/eraser, check if it's a new stroke or continuing an old one
+             if ((action.tool === 'pencil' || action.tool === 'eraser') && action.isStartOfLine) {
+                 room.drawingHistory.push(action);
+             } else if ((action.tool === 'pencil' || action.tool === 'eraser') && !action.isStartOfLine) {
+                 const lastAction = room.drawingHistory[room.drawingHistory.length - 1];
+                 if (lastAction && lastAction.tool === action.tool && lastAction.color === action.color && lastAction.size === action.size) {
+                     lastAction.points.push(...action.points);
+                 } else {
+                     // This case should ideally not happen if client logic is correct, but as a fallback...
+                     room.drawingHistory.push(action);
+                 }
+             } else {
+                 room.drawingHistory.push(action);
+             }
         }
-        // Broadcast the single action to other clients
+        // Broadcast the single action to other clients for real-time drawing
         socket.to(roomId).emit('drawingAction', action);
     }
   });
