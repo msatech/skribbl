@@ -86,6 +86,7 @@ app.prepare().then(() => {
         gameState: {
           status: 'waiting',
           currentRound: 0,
+          turn: -1,
           currentDrawer: null,
           currentWord: '',
           timer: 0,
@@ -380,13 +381,13 @@ app.prepare().then(() => {
 
           if (room.gameState.status !== 'waiting' && room.players.length < 2) {
              endGame(roomId);
-          } else if (removedPlayer.isHost) {
-             // If host leaves, assign a new host
-             room.players[0].isHost = true;
-          }
-          
-          if (room.gameState.status !== 'waiting' && removedPlayer.id === room.gameState.currentDrawer) {
-              endRound(roomId, 'drawer_left');
+          } else {
+             if (removedPlayer.isHost && room.players.length > 0) {
+               room.players[0].isHost = true;
+             }
+             if (room.gameState.status !== 'waiting' && removedPlayer.id === room.gameState.currentDrawer) {
+                 endRound(roomId, 'drawer_left');
+             }
           }
           
           io.to(roomId).emit('roomState', room);
@@ -409,4 +410,6 @@ app.prepare().then(() => {
       process.exit(1);
     });
 });
+    
+
     
