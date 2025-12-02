@@ -11,7 +11,7 @@ interface SocketContextType {
   socket: Socket | null;
   isConnected: boolean;
   room: Room | null;
-  me: Player | null | undefined;
+  me: Player | null;
   roomId: string | null;
   setRoomId: (id: string | null) => void;
   chatMessages: ChatMessage[];
@@ -41,18 +41,11 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const { playSound } = useAudio();
   const { toast } = useToast();
   
-  // Ref to hold the drawing buffer
-  const drawingBuffer = React.useRef<any[]>([]);
-
   useEffect(() => {
     const socketInstance = io(SERVER_URL, {
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
         transports: ['websocket'],
-        cors: {
-          origin: "http://localhost:9002",
-          methods: ["GET", "POST"]
-        }
     });
     setSocket(socketInstance);
 
@@ -70,7 +63,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     
     socketInstance.on('connect_error', (err) => {
         console.error('Connection Error:', err.message);
-        if(err.message.includes('xhr poll error') || err.message.includes('timeout')) {
+        if(err.message.includes('xhr poll error') || err.message.includes('timeout') || err.message.includes('websocket error')) {
             toast({ variant: 'destructive', title: 'Connection Error', description: 'Could not connect to the game server. Is it running?' });
         }
     });
@@ -84,14 +77,8 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     if(!socket) return;
     
     const handleRoomState = (newRoomState: Room) => {
-        setRoom(prevRoom => {
-             // If drawing history is smaller, it's likely an undo action, so replace it fully.
-            if (prevRoom && newRoomState.drawingHistory.length < prevRoom.drawingHistory.length) {
-                return { ...newRoomState };
-            }
-            // For other updates, just update the room state
-            return newRoomState;
-        });
+        setRoom(newRoomState);
+        // Clear chat and scores when returning to the waiting state
         if(newRoomState.gameState.status === 'waiting') {
             setChatMessages([]);
             setFinalScores([]);
@@ -113,15 +100,13 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
       setRoom(prevRoom => {
         if (!prevRoom) return null;
 
-        let newHistory = [...prevRoom.drawingHistory];
-
-        if (action.tool === 'clear') {
-            newHistory = [];
-        } else if (action.tool === 'undo') {
-            // This is now handled by full roomState updates
-        } else {
-            newHistory.push(action);
+        // This is a full state replacement from the server, we just apply it
+        if (action.tool === 'undo' || action.tool === 'clear') {
+            // Server will send a full roomState update for undo/clear
+            return prevRoom;
         }
+
+        const newHistory = [...prevRoom.drawingHistory, action];
         return { ...prevRoom, drawingHistory: newHistory };
       });
     };
@@ -158,7 +143,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
 
   }, [socket, playSound, toast, room?.gameState.currentDrawerId]);
 
-  const me = room && socket ? room.players.find(p => p.id === socket.id) : null;
+  const me = room && socket ? room.players.find(p => p.id === socket.id) || null : null;
 
   const value: SocketContextType = {
     socket,

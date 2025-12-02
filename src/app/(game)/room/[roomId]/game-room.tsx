@@ -99,8 +99,6 @@ export default function GameRoom() {
         return;
     }
     socket?.emit('resetGame', room?.id);
-    setIsLeaderboardOpen(false);
-    setFinalScores([]);
   }
   
   const handleLeaveRoom = () => {
@@ -120,11 +118,14 @@ export default function GameRoom() {
     toast({ title: 'Invite link copied!' });
   };
   
-  const { gameState, players, settings, drawingHistory } = room || {};
+  const { gameState, players, settings } = room || {};
+
+  const isDrawer = me?.id === gameState?.currentDrawerId;
+  const currentDrawer = players?.find(p => p.id === gameState?.currentDrawerId);
   
   const wordDisplay = useMemo(() => {
     if (!gameState?.word) return '';
-    if (me?.id === gameState?.currentDrawerId || gameState.status === 'ended_round' || gameState.status === 'ended') return gameState.word;
+    if (isDrawer || gameState.status === 'ended_round' || gameState.status === 'ended') return gameState.word;
     
     const revealedLetters = new Set<number>();
     gameState.word.split('').forEach((char, index) => {
@@ -152,7 +153,7 @@ export default function GameRoom() {
     return gameState.word.split('').map((char, index) => {
         return revealedLetters.has(index) ? char : '_';
     }).join('');
-  }, [gameState?.word, me?.id, gameState?.currentDrawerId, gameState?.status, gameState?.timer, settings?.drawTime, settings?.hints]);
+  }, [gameState?.word, isDrawer, gameState?.status, gameState?.timer, settings?.drawTime, settings?.hints]);
 
   if (!isConnected || !room || !me) {
     return (
@@ -169,9 +170,6 @@ export default function GameRoom() {
     );
   }
 
-  const isDrawer = me?.id === gameState?.currentDrawerId;
-  const currentDrawer = players?.find(p => p.id === gameState?.currentDrawerId);
-
   return (
     <div className="flex h-screen flex-col p-2 sm:p-4 gap-4">
       <header className="flex-shrink-0 flex justify-between items-center rounded-lg bg-card p-2 border">
@@ -187,7 +185,7 @@ export default function GameRoom() {
       
       <div className="flex-grow grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-0">
         <aside className="hidden lg:flex lg:col-span-1 order-2 lg:order-1 flex-col gap-4 min-h-0">
-          <PlayerList players={players} currentDrawerId={gameState.currentDrawerId} guessedPlayerIds={gameState.guessedPlayerIds} />
+          <PlayerList players={players || []} currentDrawerId={gameState.currentDrawerId} guessedPlayerIds={gameState.guessedPlayerIds} />
         </aside>
         
         <main className="lg:col-span-2 order-1 lg:order-2 bg-card rounded-lg border flex flex-col min-h-0">
@@ -207,11 +205,14 @@ export default function GameRoom() {
                         {me?.isHost && players.length > 1 && (
                             <Button onClick={handleStartGame} size="lg"><Play className="h-5 w-5 mr-2"/> {gameState.status === 'ended' ? 'Play Again' : 'Start Game'}</Button>
                         )}
-                         {me?.isHost && players.length < 2 && (
+                         {me?.isHost && players.length < 2 && gameState.status === 'waiting' && (
                             <p className="text-white">You need at least 2 players to start.</p>
                         )}
                         {!me?.isHost && gameState.status === 'ended' && (
                              <p className="text-white">Waiting for the host to start a new game.</p>
+                        )}
+                         {!me?.isHost && gameState.status === 'waiting' && (
+                             <p className="text-white">Waiting for the host to start the game.</p>
                         )}
                     </div>
                  )}
@@ -246,7 +247,7 @@ export default function GameRoom() {
                 </Button>
             </SheetTrigger>
             <SheetContent side="bottom" className="h-[75vh] p-0 flex flex-col">
-                <PlayerList players={players} currentDrawerId={gameState.currentDrawerId} guessedPlayerIds={gameState.guessedPlayerIds} />
+                <PlayerList players={players || []} currentDrawerId={gameState.currentDrawerId} guessedPlayerIds={gameState.guessedPlayerIds} />
                 <Chat isDrawer={!!isDrawer} />
             </SheetContent>
           </Sheet>

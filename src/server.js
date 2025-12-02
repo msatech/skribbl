@@ -45,6 +45,7 @@ io.on('connection', (socket) => {
       isPrivate,
       settings,
       players: [host],
+      finalScores: [],
       gameState: {
         status: 'waiting',
         currentRound: 0,
@@ -69,12 +70,15 @@ io.on('connection', (socket) => {
       return socket.emit('error', { message: 'Room not found.' });
     }
 
-    const existingPlayer = room.players.find(p => p.nickname === nickname);
+    // Check if player with same nickname is already in the room
+    const existingPlayerIndex = room.players.findIndex(p => p.nickname === nickname);
 
-    if (existingPlayer) {
-        existingPlayer.id = socket.id;
+    if (existingPlayerIndex !== -1) {
+        // Player is rejoining, update their socket ID
+        room.players[existingPlayerIndex].id = socket.id;
         console.log(`${nickname} re-joined room: ${roomId}`);
     } else {
+        // New player joining
         if (room.players.length >= room.settings.maxPlayers) {
             return socket.emit('error', { message: 'Room is full.' });
         }
@@ -95,18 +99,32 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('roomState', room);
   });
 
+  const startGame = (roomId) => {
+    const room = rooms[roomId];
+    if (!room) return;
+    
+    // Reset scores and game state for a new game
+    room.players.forEach(p => p.score = 0);
+    room.finalScores = [];
+    room.gameState = {
+        ...room.gameState,
+        status: 'waiting',
+        currentRound: 0,
+        turn: -1,
+        word: '',
+        guessedPlayerIds: [],
+    };
+    
+    startRound(roomId);
+  };
+
   socket.on('startGame', (roomId) => {
     const room = rooms[roomId];
     if (!room || room.players.find(p => p.id === socket.id)?.isHost !== true) return;
     if (room.players.length < 2) {
         return socket.emit('systemMessage', { content: 'You need at least 2 players to start.' });
     }
-    
-    room.players.forEach(p => p.score = 0);
-    room.gameState.currentRound = 0;
-    room.gameState.turn = -1;
-    
-    startRound(roomId);
+    startGame(roomId);
   });
 
   const startRound = (roomId) => {
@@ -126,7 +144,7 @@ io.on('connection', (socket) => {
 
     const drawer = room.players[room.gameState.turn];
     if (!drawer) {
-        endGame(roomId);
+        endGame(roomId); // All players might have left
         return;
     }
     
@@ -139,15 +157,18 @@ io.on('connection', (socket) => {
     
     const wordChoices = getShuffledWords(3);
     
+    // Send word choices ONLY to the drawer
     io.to(drawer.id).emit('chooseWord', wordChoices);
     
     io.to(roomId).emit('roomState', room);
     io.to(roomId).emit('systemMessage', { content: `${drawer.nickname} is choosing a word...` });
     io.to(roomId).emit('sound', 'new_round');
 
+    // Word choice timeout
     room.wordChoiceTimeout = setTimeout(() => {
         if (room.gameState.status === 'choosing_word') {
             const randomWord = wordChoices[Math.floor(Math.random() * wordChoices.length)];
+            // Manually trigger word selection for the drawer
             handleWordChosen(roomId, drawer.id, randomWord);
         }
     }, 5000);
@@ -175,15 +196,16 @@ io.on('connection', (socket) => {
     room.gameState.timer = room.settings.drawTime;
     
     io.to(roomId).emit('roomState', room);
-    io.to(roomId).emit('systemMessage', { content: `${room.players.find(p => p.id === room.gameState.currentDrawerId).nickname} is drawing!` });
+    io.to(roomId).emit('systemMessage', { content: `${room.players.find(p => p.id === room.gameState.currentDrawerId)?.nickname} is drawing!` });
 
+    // Start timer
     if (room.timerInterval) clearInterval(room.timerInterval);
     room.timerInterval = setInterval(() => {
         room.gameState.timer--;
         io.to(roomId).emit('timerUpdate', room.gameState.timer);
         
-        if(room.gameState.timer % Math.floor(room.settings.drawTime / (room.settings.hints + 1)) === 0 && room.gameState.timer > 0) {
-            io.to(roomId).emit('roomState', room);
+        if(room.gameState.timer > 0 && room.gameState.timer % Math.floor(room.settings.drawTime / (room.settings.hints + 1)) === 0) {
+            io.to(roomId).emit('roomState', room); // To update word display with hints
         }
 
         if (room.gameState.timer <= 0) {
@@ -212,6 +234,7 @@ io.on('connection', (socket) => {
       const guesserScore = basePoints + timeBonus + firstGuessBonus;
       player.score += guesserScore;
 
+      // Update drawer's score
       const drawer = room.players.find(p => p.id === room.gameState.currentDrawerId);
       if(drawer) {
           const guessersCount = room.players.length - 1;
@@ -244,30 +267,29 @@ io.on('connection', (socket) => {
         if (action.tool === 'clear') {
             room.drawingHistory = [];
         } else if (action.tool === 'undo') {
+            // Find the last continuous line or single action and remove it
             if (room.drawingHistory.length > 0) {
-                let lastStrokeIndex = -1;
-                for (let i = room.drawingHistory.length - 1; i >= 0; i--) {
-                    const currentAction = room.drawingHistory[i];
-                    if ((currentAction.tool === 'pencil' || currentAction.tool === 'eraser') && currentAction.isStartOfLine) {
-                        lastStrokeIndex = i;
-                        break;
-                    }
-                     if (currentAction.tool === 'fill') {
-                        lastStrokeIndex = i;
-                        break;
-                    }
+                const lastAction = room.drawingHistory[room.drawingHistory.length - 1];
+                 // This was the start of a new line, find where it began
+                let startIndex = room.drawingHistory.length - 1;
+                while(
+                    startIndex > 0 &&
+                    room.drawingHistory[startIndex - 1].tool === lastAction.tool &&
+                    room.drawingHistory[startIndex - 1].color === lastAction.color &&
+                    room.drawingHistory[startIndex - 1].size === lastAction.size &&
+                    !room.drawingHistory[startIndex -1].isStartOfLine
+                ) {
+                    startIndex--;
                 }
-                if(lastStrokeIndex !== -1) {
-                    room.drawingHistory.splice(lastStrokeIndex);
-                } else {
-                   room.drawingHistory = [];
-                }
+                room.drawingHistory.splice(startIndex);
             }
+             // We need to rebroadcast the whole history for a reliable undo
              io.to(roomId).emit('roomState', { ...room, drawingHistory: room.drawingHistory });
-             return; 
+             return; // Prevent single action broadcast
         } else {
              room.drawingHistory.push(action);
         }
+        // Broadcast the single action to other clients for real-time drawing
         socket.to(roomId).emit('drawingAction', action);
     }
   });
@@ -294,9 +316,10 @@ io.on('connection', (socket) => {
 
     if (room.timerInterval) clearInterval(room.timerInterval);
     if (room.wordChoiceTimeout) clearTimeout(room.wordChoiceTimeout);
-
+    
+    room.finalScores = room.players.sort((a,b) => b.score - a.score);
     room.gameState.status = 'ended';
-    io.to(roomId).emit('finalScores', room.players.sort((a,b) => b.score - a.score));
+    io.to(roomId).emit('finalScores', room.finalScores);
     io.to(roomId).emit('sound', 'game_over');
     io.to(roomId).emit('roomState', room);
   }
@@ -317,22 +340,28 @@ io.on('connection', (socket) => {
       
       if (playerIndex !== -1) {
         const disconnectedPlayer = room.players[playerIndex];
-        room.players.splice(playerIndex, 1);
         
         io.to(roomId).emit('systemMessage', { content: `${disconnectedPlayer.nickname} has left the game.` });
         io.to(roomId).emit('sound', 'leave');
+        
+        // Mark as disconnected instead of removing
+        // room.players[playerIndex].disconnected = true;
+        // Instead we remove them for now to simplify logic. If they rejoin, they'll be added back.
+        room.players.splice(playerIndex, 1);
+
 
         if (room.players.length === 0) {
             delete rooms[roomId];
             console.log(`Room ${roomId} closed because all players left.`);
         } else {
-             if (room.players.length < 2 && room.gameState.status !== 'waiting' && room.gameState.status !== 'ended') {
+             if (room.players.length < 2 && (room.gameState.status === 'playing' || room.gameState.status === 'choosing_word')) {
                 io.to(roomId).emit('systemMessage', { content: 'Not enough players to continue. Game over.'});
                 endGame(roomId);
             } else if (disconnectedPlayer.id === room.gameState.currentDrawerId) {
                 io.to(roomId).emit('systemMessage', { content: 'The drawer has left. Starting new round.'});
                 endRound(roomId, 'drawer_left');
             } else if (!room.players.some(p => p.isHost)) {
+                // Promote next player to host
                 room.players[0].isHost = true;
                 io.to(roomId).emit('systemMessage', { content: `${room.players[0].nickname} is now the host.`});
             }
