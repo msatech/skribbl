@@ -77,11 +77,14 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     if(!socket) return;
     
     const handleRoomState = (newRoomState: Room) => {
+        // When game restarts (goes from 'ended' to 'waiting'), clear local finalScores
+        if (room?.gameState.status === 'ended' && newRoomState.gameState.status === 'waiting') {
+            setFinalScores([]);
+        }
         setRoom(newRoomState);
-        // Clear chat and scores when returning to the waiting state
+        // Clear chat when returning to the waiting state
         if(newRoomState.gameState.status === 'waiting') {
             setChatMessages([]);
-            setFinalScores([]);
         }
     };
 
@@ -141,7 +144,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
         socket.off('error', handleError);
     }
 
-  }, [socket, playSound, toast, room?.gameState.currentDrawerId]);
+  }, [socket, playSound, toast, room?.gameState.currentDrawerId, room?.gameState.status]);
 
   const me = room && socket ? room.players.find(p => p.id === socket.id) || null : null;
 

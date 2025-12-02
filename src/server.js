@@ -107,12 +107,13 @@ io.on('connection', (socket) => {
     room.players.forEach(p => p.score = 0);
     room.finalScores = [];
     room.gameState = {
-        ...room.gameState,
         status: 'waiting',
         currentRound: 0,
-        turn: -1,
-        word: '',
+        currentDrawerId: null,
+        timer: 0,
         guessedPlayerIds: [],
+        word: '',
+        turn: -1,
     };
     
     startRound(roomId);
@@ -204,7 +205,7 @@ io.on('connection', (socket) => {
         room.gameState.timer--;
         io.to(roomId).emit('timerUpdate', room.gameState.timer);
         
-        if(room.gameState.timer > 0 && room.gameState.timer % Math.floor(room.settings.drawTime / (room.settings.hints + 1)) === 0) {
+        if(room.gameState.timer > 0 && room.settings.hints > 0 && room.gameState.timer % Math.floor(room.settings.drawTime / (room.settings.hints + 1)) === 0) {
             io.to(roomId).emit('roomState', room); // To update word display with hints
         }
 
@@ -267,21 +268,18 @@ io.on('connection', (socket) => {
         if (action.tool === 'clear') {
             room.drawingHistory = [];
         } else if (action.tool === 'undo') {
-            // Find the last continuous line or single action and remove it
             if (room.drawingHistory.length > 0) {
-                const lastAction = room.drawingHistory[room.drawingHistory.length - 1];
-                 // This was the start of a new line, find where it began
-                let startIndex = room.drawingHistory.length - 1;
-                while(
-                    startIndex > 0 &&
-                    room.drawingHistory[startIndex - 1].tool === lastAction.tool &&
-                    room.drawingHistory[startIndex - 1].color === lastAction.color &&
-                    room.drawingHistory[startIndex - 1].size === lastAction.size &&
-                    !room.drawingHistory[startIndex -1].isStartOfLine
-                ) {
-                    startIndex--;
+                let lastStrokeStartIndex = -1;
+                for (let i = room.drawingHistory.length - 1; i >= 0; i--) {
+                    // @ts-ignore
+                    if (room.drawingHistory[i].isStartOfLine || room.drawingHistory[i].tool === 'fill') {
+                        lastStrokeStartIndex = i;
+                        break;
+                    }
                 }
-                room.drawingHistory.splice(startIndex);
+                if (lastStrokeStartIndex !== -1) {
+                    room.drawingHistory.splice(lastStrokeStartIndex);
+                }
             }
              // We need to rebroadcast the whole history for a reliable undo
              io.to(roomId).emit('roomState', { ...room, drawingHistory: room.drawingHistory });
@@ -317,7 +315,7 @@ io.on('connection', (socket) => {
     if (room.timerInterval) clearInterval(room.timerInterval);
     if (room.wordChoiceTimeout) clearTimeout(room.wordChoiceTimeout);
     
-    room.finalScores = room.players.sort((a,b) => b.score - a.score);
+    room.finalScores = [...room.players].sort((a,b) => b.score - a.score);
     room.gameState.status = 'ended';
     io.to(roomId).emit('finalScores', room.finalScores);
     io.to(roomId).emit('sound', 'game_over');
@@ -344,9 +342,7 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('systemMessage', { content: `${disconnectedPlayer.nickname} has left the game.` });
         io.to(roomId).emit('sound', 'leave');
         
-        // Mark as disconnected instead of removing
-        // room.players[playerIndex].disconnected = true;
-        // Instead we remove them for now to simplify logic. If they rejoin, they'll be added back.
+        // Instead of just removing, we handle host change and game state properly.
         room.players.splice(playerIndex, 1);
 
 
