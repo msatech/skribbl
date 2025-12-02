@@ -131,7 +131,7 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
                       <Sparkles className={`h-4 w-4 ${isSuggesting ? 'animate-spin' : ''}`} />
                     </Button>
                   </div>
-                  <FormMessage className="col-span-4 text-xs text-right" />
+                  <FormMessage className="col-span-3 col-start-2 text-xs" />
                 </FormItem>
               )}
             />
@@ -145,7 +145,7 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
                   <FormControl>
                     <Input type="number" {...field} className="col-span-3" />
                   </FormControl>
-                  <FormMessage className="col-span-4 text-xs text-right" />
+                  <FormMessage className="col-span-3 col-start-2 text-xs" />
                 </FormItem>
               )}
             />
@@ -159,7 +159,7 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
                   <FormControl>
                     <Input type="number" {...field} className="col-span-3" />
                   </FormControl>
-                  <FormMessage className="col-span-4 text-xs text-right" />
+                  <FormMessage className="col-span-3 col-start-2 text-xs" />
                 </FormItem>
               )}
             />
@@ -173,7 +173,7 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
                   <FormControl>
                     <Input type="number" {...field} className="col-span-3" />
                   </FormControl>
-                  <FormMessage className="col-span-4 text-xs text-right" />
+                  <FormMessage className="col-span-3 col-start-2 text-xs" />
                 </FormItem>
               )}
             />
@@ -187,7 +187,7 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
                   <FormControl>
                     <Input type="number" {...field} className="col-span-3" placeholder="0 for any" />
                   </FormControl>
-                  <FormMessage className="col-span-4 text-xs text-right" />
+                  <FormMessage className="col-span-3 col-start-2 text-xs" />
                 </FormItem>
               )}
             />
@@ -222,7 +222,7 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
                   <FormControl>
                     <Input type="number" {...field} className="col-span-3" disabled={form.watch('gameMode') !== 'combination'} />
                   </FormControl>
-                  <FormMessage className="col-span-4 text-xs text-right" />
+                  <FormMessage className="col-span-3 col-start-2 text-xs" />
                 </FormItem>
               )}
             />
@@ -236,7 +236,7 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
                   <FormControl>
                     <Input type="number" {...field} className="col-span-3" />
                   </FormControl>
-                  <FormMessage className="col-span-4 text-xs text-right" />
+                  <FormMessage className="col-span-3 col-start-2 text-xs" />
                 </FormItem>
               )}
             />

@@ -16,7 +16,7 @@ const words = JSON.parse(fs.readFileSync(path.join(__dirname, 'src/wordlist.json
 
 const rooms = {};
 
-const getShuffledWords = (count, settings) => {
+const getShuffledWords = (count, settings, roomId) => {
   let filteredWords = [...words];
 
   if (settings.wordLength > 0) {
@@ -28,7 +28,8 @@ const getShuffledWords = (count, settings) => {
       return shuffled.slice(0, num);
   }
 
-  if (settings.gameMode === 'combination') {
+  const room = rooms[roomId];
+  if (room && room.settings.gameMode === 'combination') {
     return Array.from({ length: count }, () => getWords(settings.wordCount).join(' '));
   }
   
@@ -103,11 +104,13 @@ app.prepare().then(() => {
       if (!rooms[roomId]) {
         return callback({ status: 'error', message: 'Room not found' });
       }
-      if (rooms[roomId].players.some(p => p.id === socket.id)) {
-        // Player is already in the room, just send them the state
+      
+      const existingPlayer = rooms[roomId].players.find(p => p.id === socket.id);
+      if (existingPlayer) {
         io.to(socket.id).emit('roomState', rooms[roomId]);
         return callback({ status: 'ok', room: rooms[roomId] });
       }
+
       if (rooms[roomId].players.length >= rooms[roomId].settings.maxPlayers) {
         return callback({ status: 'error', message: 'Room is full' });
       }
@@ -116,7 +119,6 @@ app.prepare().then(() => {
       rooms[roomId].players.push(newPlayer);
       socket.join(roomId);
       
-      // Send drawing history to the new player
       if (rooms[roomId].drawingData.length > 0) {
         socket.emit('drawingHistory', rooms[roomId].drawingData);
       }
@@ -155,7 +157,7 @@ app.prepare().then(() => {
       room.drawingData = [];
       io.to(roomId).emit('clearCanvas');
 
-      const wordChoices = getShuffledWords(3, room.settings);
+      const wordChoices = getShuffledWords(3, room.settings, roomId);
       io.to(drawer.id).emit('chooseWord', wordChoices);
 
       room.gameState.timer = room.settings.drawTime;
@@ -173,12 +175,11 @@ app.prepare().then(() => {
         room.gameState.timer -= 1;
         io.to(roomId).emit('timerUpdate', room.gameState.timer);
         
-        // Hint logic
         if (room.gameState.currentWord && room.settings.hints > 0) {
             const timePerHint = Math.floor(room.settings.drawTime / (room.settings.hints + 1));
             if (room.gameState.timer > 0 && room.gameState.timer % timePerHint === 0 && room.gameState.hintsUsed < room.settings.hints) {
                 room.gameState.hintsUsed++;
-                const wordWithHints = getWordWithHints(room.gameState.currentWord, room.gameState.hintsUsed, room.settings.hints);
+                const wordWithHints = getWordWithHints(room.gameState.currentWord, room.gameState.hintsUsed, room.settings.hints, roomId);
                 io.to(roomId).emit('wordUpdate', { word: wordWithHints });
                 io.to(room.gameState.currentDrawer).emit('wordUpdate', { word: room.gameState.currentWord, forDrawer: true });
             }
@@ -222,15 +223,17 @@ app.prepare().then(() => {
       startGame(roomId);
     });
 
-    const getWordMask = (word) => {
-        if (rooms[roomId] && rooms[roomId].settings.gameMode === 'combination') {
+    const getWordMask = (word, roomId) => {
+        const room = rooms[roomId];
+        if (room && room.settings.gameMode === 'combination') {
             return word.split(' ').map(w => '_'.repeat(w.length)).join(' + ');
         }
         return '_'.repeat(word.length);
     }
     
-    const getWordWithHints = (word, hintsUsed, totalHints) => {
+    const getWordWithHints = (word, hintsUsed, totalHints, roomId) => {
         if (!word) return '';
+        const room = rooms[roomId];
         const wordParts = word.split(' ');
         const hintsPerPart = Math.floor(hintsUsed / wordParts.length);
         const extraHints = hintsUsed % wordParts.length;
@@ -244,7 +247,7 @@ app.prepare().then(() => {
             return part.split('').map((char, i) => revealedIndices.has(i) ? char : '_').join('');
         });
 
-        if (rooms[roomId] && rooms[roomId].settings.gameMode === 'combination') {
+        if (room && room.settings.gameMode === 'combination') {
             return revealedParts.join(' + ');
         }
         return revealedParts.join('');
@@ -255,7 +258,7 @@ app.prepare().then(() => {
       if (!room || socket.id !== room.gameState.currentDrawer) return;
       room.gameState.currentWord = word;
       room.guessedPlayers = new Set();
-      io.to(roomId).emit('wordUpdate', { word: getWordMask(word) });
+      io.to(roomId).emit('wordUpdate', { word: getWordMask(word, roomId) });
       io.to(socket.id).emit('wordUpdate', { word: word, forDrawer: true });
     });
 

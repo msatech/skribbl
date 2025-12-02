@@ -41,9 +41,11 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     }
 
     socket.emit('joinRoom', { roomId, player: { nickname } }, (response: { status: string; room?: Room; message?: string }) => {
-      if (response.status !== 'ok' || !response.room) {
+      if (response.status !== 'ok') {
         toast({ variant: 'destructive', title: 'Could not join room', description: response.message });
         router.push('/');
+      } else if (response.room) {
+        setRoom(response.room);
       }
     });
 
@@ -154,12 +156,12 @@ export default function GameRoom({ roomId }: { roomId: string }) {
                         )}
                     </div>
                  )}
-                <Canvas roomId={roomId} isDrawer={isDrawer} />
+                <Canvas roomId={roomId} isDrawer={!!isDrawer} />
             </div>
         </main>
         
         <aside className="hidden lg:flex lg:col-span-1 order-3 flex-col min-h-0">
-          <Chat roomId={roomId} players={players} me={me} isDrawer={isDrawer} />
+          <Chat roomId={roomId} players={players} me={me} isDrawer={!!isDrawer} />
         </aside>
       </div>
 
@@ -172,13 +174,13 @@ export default function GameRoom({ roomId }: { roomId: string }) {
             </SheetTrigger>
             <SheetContent side="bottom" className="h-[75vh] p-0 flex flex-col">
                 <PlayerList players={players} currentDrawerId={gameState.currentDrawer} />
-                <Chat roomId={roomId} players={players} me={me} isDrawer={isDrawer} />
+                <Chat roomId={roomId} players={players} me={me} isDrawer={!!isDrawer} />
             </SheetContent>
           </Sheet>
        </div>
       
       <WordChoiceModal
-        isOpen={wordChoices.length > 0 && isDrawer}
+        isOpen={wordChoices.length > 0 && !!isDrawer}
         words={wordChoices}
         onSelectWord={handleWordSelect}
         time={15}
