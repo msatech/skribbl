@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useSocket } from '@/contexts/socket-context';
 import Canvas from './canvas';
@@ -9,35 +10,52 @@ import PlayerList from './player-list';
 import WordChoiceModal from './word-choice-modal';
 import LeaderboardDialog from './leaderboard-dialog';
 import { Button } from '@/components/ui/button';
-import { Copy, Users, Home, Loader2, Play, MessageSquare } from 'lucide-react';
+import { Copy, Users, Home, Loader2, Play, MessageSquare, Volume2, VolumeX } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import NicknameDialog from './nickname-dialog';
 import { useToast } from '@/hooks/use-toast';
 import useLocalStorage from '@/hooks/use-local-storage';
+import { useAudio } from '@/hooks/use-audio';
 
 export default function GameRoom() {
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
   const { socket, room, me, isConnected, setRoomId, chatMessages, finalScores, setFinalScores } = useSocket();
+  const { playSound, isMuted, toggleMute } = useAudio();
   const [nickname, setNickname] = useLocalStorage('nickname', '');
+  
+  useEffect(() => {
+      // Re-join if disconnected and reconnected
+      if (isConnected && socket && roomId && !me && nickname) {
+          socket.emit('joinRoom', { roomId, nickname });
+      }
+  }, [isConnected, socket, me, nickname]);
+
+  const handleRejoin = useCallback(() => {
+    if (socket && roomId && nickname && !me) {
+        socket.emit('joinRoom', { roomId, nickname });
+    }
+  }, [socket, nickname, me]);
+
+
   const [isNicknameModalOpen, setIsNicknameModalOpen] = useState(false);
   const [wordChoices, setWordChoices] = useState<string[]>([]);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   
-  const currentRoomId = params.roomId as string;
+  const roomId = params.roomId as string;
   
   useEffect(() => {
-    if (currentRoomId) {
-        setRoomId(currentRoomId);
+    if (roomId) {
+        setRoomId(roomId);
     }
     
     if (isConnected && !nickname) {
         setIsNicknameModalOpen(true);
-    } else if (isConnected && nickname && currentRoomId && !me) {
-        socket?.emit('joinRoom', { roomId: currentRoomId, nickname });
+    } else if (isConnected && nickname && roomId && !me) {
+        socket.emit('joinRoom', { roomId: roomId, nickname });
     }
-  }, [isConnected, nickname, currentRoomId, setRoomId, me, socket]);
+  }, [isConnected, nickname, roomId, setRoomId, me, socket]);
 
   useEffect(() => {
     if (!socket) return;
@@ -46,7 +64,7 @@ export default function GameRoom() {
       setWordChoices(words);
     };
 
-    const handleFinalScores = (scores) => {
+    const handleFinalScores = (scores: any) => {
         setFinalScores(scores);
         setIsLeaderboardOpen(true);
     };
@@ -92,8 +110,8 @@ export default function GameRoom() {
   const handleConfirmNickname = (name: string) => {
     setNickname(name);
     setIsNicknameModalOpen(false);
-    if(currentRoomId) {
-        socket?.emit('joinRoom', { roomId: currentRoomId, nickname: name });
+    if(roomId) {
+        socket?.emit('joinRoom', { roomId: roomId, nickname: name });
     }
   }
 
@@ -102,27 +120,12 @@ export default function GameRoom() {
     toast({ title: 'Invite link copied!' });
   };
   
-  if (!isConnected || !room || !me) {
-    return (
-        <>
-         <NicknameDialog 
-            isOpen={isNicknameModalOpen}
-            onConfirm={handleConfirmNickname}
-        />
-        <div className="flex h-screen items-center justify-center">
-            <Loader2 className="h-12 w-12 animate-spin text-primary" />
-            <p className="ml-4">{isConnected ? 'Joining room...' : 'Connecting to game...'}</p>
-        </div>
-      </>
-    );
-  }
-  
-  const { gameState, players, settings, drawingHistory } = room;
-  const isDrawer = me?.id === gameState.currentDrawerId;
-  const currentDrawer = players.find(p => p.id === gameState.currentDrawerId);
+  const { gameState, players, settings, drawingHistory } = room || {};
+  const isDrawer = me?.id === gameState?.currentDrawerId;
+  const currentDrawer = players?.find(p => p.id === gameState?.currentDrawerId);
 
   const wordDisplay = useMemo(() => {
-    if (!gameState.word) return '';
+    if (!gameState?.word) return '';
     if (isDrawer || gameState.status === 'ended_round' || gameState.status === 'ended') return gameState.word;
     
     const revealedLetters = new Set<number>();
@@ -130,7 +133,7 @@ export default function GameRoom() {
         if (char === ' ') revealedLetters.add(index);
     });
 
-    if (settings.hints > 0 && gameState.timer > 0) {
+    if (settings?.hints && settings.hints > 0 && gameState.timer > 0) {
         const timePerHint = Math.floor(settings.drawTime / (settings.hints + 1));
         const hintsToShow = Math.floor((settings.drawTime - gameState.timer) / timePerHint);
 
@@ -151,13 +154,31 @@ export default function GameRoom() {
     return gameState.word.split('').map((char, index) => {
         return revealedLetters.has(index) ? char : '_';
     }).join('');
-  }, [gameState.word, isDrawer, gameState.status, gameState.timer, settings.drawTime, settings.hints]);
+  }, [gameState?.word, isDrawer, gameState?.status, gameState?.timer, settings?.drawTime, settings?.hints]);
+
+  if (!isConnected || !room || !me) {
+    return (
+        <>
+         <NicknameDialog 
+            isOpen={isNicknameModalOpen}
+            onConfirm={handleConfirmNickname}
+        />
+        <div className="flex h-screen items-center justify-center">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="ml-4">{isConnected ? 'Joining room...' : 'Connecting to game...'}</p>
+        </div>
+      </>
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col p-2 sm:p-4 gap-4">
       <header className="flex-shrink-0 flex justify-between items-center rounded-lg bg-card p-2 border">
         <h1 className="text-lg sm:text-xl font-bold text-primary">{room.name}</h1>
         <div className="flex items-center gap-1 sm:gap-2">
+            <Button variant="outline" size="sm" onClick={toggleMute}>
+                {isMuted ? <VolumeX className="w-4 h-4"/> : <Volume2 className="w-4 h-4"/>}
+            </Button>
             <Button variant="outline" size="sm" onClick={copyInviteLink}><Copy className="w-4 h-4 sm:mr-2" /><span className="hidden sm:inline">Invite</span></Button>
             <Button variant="outline" size="sm" onClick={() => router.push('/')}><Home className="w-4 h-4 sm:mr-2" /><span className="hidden sm:inline">Lobby</span></Button>
         </div>
@@ -249,3 +270,5 @@ export default function GameRoom() {
     </div>
   );
 }
+
+    
