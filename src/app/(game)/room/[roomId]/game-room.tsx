@@ -57,11 +57,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     const onRoomState = (newRoom: Room) => setRoom(newRoom);
     const onTimerUpdate = (time: number) => setTimeLeft(time);
     const onWordUpdate = ({ word, forDrawer }: { word: string, forDrawer?: boolean }) => {
-      if (isDrawer || forDrawer) {
         setWordToDraw(word);
-      } else {
-        setWordToDraw(word);
-      }
     };
     const onChooseWord = (choices: string[]) => setWordChoices(choices);
     const onGameOver = (scores: Player[]) => {
@@ -73,8 +69,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
         setTimeout(() => setRevealedWord(''), 5000);
     }
     const onSystemMessage = (msg: SystemMessage) => {
-        // Prevent toast spam by checking message content
-        if (!msg.content.includes("guessed the word")) {
+        if (!msg.content.includes("guessed the word") && !msg.content.includes("is choosing a word")) {
             toast({ title: msg.content, duration: 2000 });
         }
     };
@@ -96,7 +91,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
       socket.off('roundEnd', onRoundEnd);
       socket.off('systemMessage', onSystemMessage);
     };
-  }, [isConnected, socket, roomId, nickname, router, toast, isDrawer]);
+  }, [isConnected, socket, roomId, nickname, router, toast]);
 
   const handleStartGame = () => {
     socket?.emit('startGame', { roomId });
@@ -204,7 +199,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
         isOpen={wordChoices.length > 0 && !!isDrawer}
         words={wordChoices}
         onSelectWord={handleWordSelect}
-        time={15}
+        time={4}
       />
       
       <LeaderboardDialog

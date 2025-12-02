@@ -163,6 +163,8 @@ app.prepare().then(() => {
       io.to(roomId).emit('clearCanvas');
       
       io.to(roomId).emit('roomState', room);
+      const currentDrawerNickname = room.players.find(p => p.id === drawer.id)?.nickname || 'Someone';
+      io.to(roomId).emit('systemMessage', { content: `${currentDrawerNickname} is choosing a word...` });
 
       const wordChoices = getShuffledWords(3, room.settings, roomId);
       io.to(drawer.id).emit('chooseWord', wordChoices);
