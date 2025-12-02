@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -40,10 +41,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     }
 
     socket.emit('joinRoom', { roomId, player: { nickname } }, (response: { status: string; room?: Room; message?: string }) => {
-      if (response.status === 'ok' && response.room) {
-        setRoom(response.room);
-        setTimeLeft(response.room.gameState.timer)
-      } else {
+      if (response.status !== 'ok' || !response.room) {
         toast({ variant: 'destructive', title: 'Could not join room', description: response.message });
         router.push('/');
       }
