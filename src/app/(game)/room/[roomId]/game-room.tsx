@@ -10,7 +10,7 @@ import PlayerList from './player-list';
 import WordChoiceModal from './word-choice-modal';
 import LeaderboardDialog from './leaderboard-dialog';
 import { Button } from '@/components/ui/button';
-import { Copy, Users, Home, Loader2, Play, MessageSquare, Volume2, VolumeX } from 'lucide-react';
+import { Copy, Users, Home, Loader2, Play, MessageSquare, Volume2, VolumeX, LogOut } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import NicknameDialog from './nickname-dialog';
 import { useToast } from '@/hooks/use-toast';
@@ -21,7 +21,7 @@ export default function GameRoom() {
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
-  const { socket, room, me, isConnected, setRoomId, chatMessages, finalScores, setFinalScores } = useSocket();
+  const { socket, room, me, isConnected, setRoomId, finalScores, setFinalScores } = useSocket();
   const { isMuted, toggleMute } = useAudio();
   const [nickname, setNickname] = useLocalStorage('nickname', '');
   const [isNicknameModalOpen, setIsNicknameModalOpen] = useState(false);
@@ -62,7 +62,6 @@ export default function GameRoom() {
     };
     
     const handleJoinedRoom = () => {
-        // Successfully joined, can close nickname modal if it was open for re-joining
         setIsNicknameModalOpen(false);
     }
 
@@ -78,13 +77,13 @@ export default function GameRoom() {
   }, [socket, setFinalScores]);
 
   useEffect(() => {
-    if (room?.gameState.status === 'ended') {
+    if (room?.gameState.status === 'ended' && finalScores.length > 0) {
       setIsLeaderboardOpen(true);
     } else {
       setIsLeaderboardOpen(false);
     }
-  }, [room?.gameState.status]);
-
+  }, [room?.gameState.status, finalScores]);
+  
   const handleStartGame = () => {
     socket?.emit('startGame', room?.id);
   };
@@ -95,8 +94,17 @@ export default function GameRoom() {
   };
   
   const handlePlayAgain = () => {
+    if(!me?.isHost) {
+        setIsLeaderboardOpen(false);
+        return;
+    }
     socket?.emit('resetGame', room?.id);
     setIsLeaderboardOpen(false);
+    setFinalScores([]);
+  }
+  
+  const handleLeaveRoom = () => {
+      router.push('/');
   }
   
   const handleConfirmNickname = (name: string) => {
@@ -113,12 +121,10 @@ export default function GameRoom() {
   };
   
   const { gameState, players, settings, drawingHistory } = room || {};
-  const isDrawer = me?.id === gameState?.currentDrawerId;
-  const currentDrawer = players?.find(p => p.id === gameState?.currentDrawerId);
-
+  
   const wordDisplay = useMemo(() => {
     if (!gameState?.word) return '';
-    if (isDrawer || gameState.status === 'ended_round' || gameState.status === 'ended') return gameState.word;
+    if (me?.id === gameState?.currentDrawerId || gameState.status === 'ended_round' || gameState.status === 'ended') return gameState.word;
     
     const revealedLetters = new Set<number>();
     gameState.word.split('').forEach((char, index) => {
@@ -146,7 +152,7 @@ export default function GameRoom() {
     return gameState.word.split('').map((char, index) => {
         return revealedLetters.has(index) ? char : '_';
     }).join('');
-  }, [gameState?.word, isDrawer, gameState?.status, gameState?.timer, settings?.drawTime, settings?.hints]);
+  }, [gameState?.word, me?.id, gameState?.currentDrawerId, gameState?.status, gameState?.timer, settings?.drawTime, settings?.hints]);
 
   if (!isConnected || !room || !me) {
     return (
@@ -162,6 +168,9 @@ export default function GameRoom() {
       </>
     );
   }
+
+  const isDrawer = me?.id === gameState?.currentDrawerId;
+  const currentDrawer = players?.find(p => p.id === gameState?.currentDrawerId);
 
   return (
     <div className="flex h-screen flex-col p-2 sm:p-4 gap-4">
@@ -191,15 +200,18 @@ export default function GameRoom() {
             </div>
             
             <div className="flex-grow relative">
-                 {gameState.status === 'waiting' && (
+                 {(gameState.status === 'waiting' || gameState.status === 'ended') && !isLeaderboardOpen && (
                     <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center z-10 rounded-b-lg">
-                        <p className="text-xl sm:text-2xl text-white mb-2">Waiting for players...</p>
+                        <p className="text-xl sm:text-2xl text-white mb-2">{gameState.status === 'ended' ? 'Game Over!' : 'Waiting for players...'}</p>
                         <p className="text-white mb-4"><Users className="inline h-4 w-4 mr-1"/> {players.length} / {settings.maxPlayers}</p>
                         {me?.isHost && players.length > 1 && (
-                            <Button onClick={handleStartGame} size="lg"><Play className="h-5 w-5 mr-2"/> Start Game</Button>
+                            <Button onClick={handleStartGame} size="lg"><Play className="h-5 w-5 mr-2"/> {gameState.status === 'ended' ? 'Play Again' : 'Start Game'}</Button>
                         )}
                          {me?.isHost && players.length < 2 && (
                             <p className="text-white">You need at least 2 players to start.</p>
+                        )}
+                        {!me?.isHost && gameState.status === 'ended' && (
+                             <p className="text-white">Waiting for the host to start a new game.</p>
                         )}
                     </div>
                  )}
@@ -217,7 +229,6 @@ export default function GameRoom() {
                  )}
                 <Canvas 
                     isDrawer={!!isDrawer}
-                    drawingHistory={drawingHistory}
                 />
             </div>
         </main>
@@ -252,6 +263,7 @@ export default function GameRoom() {
         isOpen={isLeaderboardOpen}
         scores={finalScores}
         onPlayAgain={handlePlayAgain}
+        onLeave={handleLeaveRoom}
         isHost={me?.isHost || false}
       />
 
@@ -262,5 +274,3 @@ export default function GameRoom() {
     </div>
   );
 }
-
-    

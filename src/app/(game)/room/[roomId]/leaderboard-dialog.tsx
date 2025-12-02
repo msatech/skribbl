@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -9,7 +10,7 @@ import {
   DialogFooter
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Trophy, Play } from 'lucide-react';
+import { Trophy, Play, LogOut } from 'lucide-react';
 import type { Player } from '@/types';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
@@ -19,13 +20,16 @@ type LeaderboardDialogProps = {
   isOpen: boolean;
   scores: Player[];
   onPlayAgain: () => void;
+  onLeave: () => void;
   isHost: boolean;
 };
 
-export default function LeaderboardDialog({ isOpen, scores, onPlayAgain, isHost }: LeaderboardDialogProps) {
+export default function LeaderboardDialog({ isOpen, scores, onPlayAgain, onLeave, isHost }: LeaderboardDialogProps) {
+  if (scores.length === 0) return null;
+  
   return (
     <Dialog open={isOpen} onOpenChange={() => {}}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle className="text-center text-2xl">Game Over!</DialogTitle>
           <DialogDescription className="text-center">Here are the final results.</DialogDescription>
@@ -57,13 +61,24 @@ export default function LeaderboardDialog({ isOpen, scores, onPlayAgain, isHost 
             ))}
           </ul>
         </div>
-        {isHost && (
-          <DialogFooter>
+        
+        <DialogFooter className="sm:justify-between gap-2">
+          {isHost ? (
             <Button onClick={onPlayAgain} className="w-full">
                 <Play className="mr-2 h-4 w-4"/> Play Again
             </Button>
-          </DialogFooter>
-        )}
+          ) : (
+             <>
+              <p className="text-sm text-muted-foreground text-center sm:text-left flex-1">Waiting for the host to start the next game...</p>
+              <div className="flex gap-2 w-full sm:w-auto">
+                 <Button onClick={onLeave} variant="outline" className="w-full sm:w-auto">
+                    <LogOut className="mr-2 h-4 w-4"/> Leave
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogFooter>
+       
       </DialogContent>
     </Dialog>
   );

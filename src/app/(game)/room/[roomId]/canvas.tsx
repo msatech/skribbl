@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
@@ -10,7 +11,6 @@ export type Line = {
   points: DrawingPoint[];
   color: string;
   size: number;
-  isStartOfLine?: boolean; 
 }
 type Fill = {
   tool: 'fill';
@@ -22,20 +22,35 @@ export type DrawingAction = Line | Fill | { tool: 'clear' } | { tool: 'undo' };
 
 type CanvasProps = {
   isDrawer: boolean;
-  drawingHistory: DrawingAction[];
 };
 
-export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
-  const { socket, roomId } = useSocket();
+export default function Canvas({ isDrawer }: CanvasProps) {
+  const { socket, roomId, room } = useSocket();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushColor, setBrushColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(5);
   const [currentTool, setCurrentTool] = useState<'pencil' | 'eraser' | 'fill'>('pencil');
   
-  const lastPointRef = useRef<DrawingPoint | null>(null);
+  // Buffer for drawing points
+  const pointsBuffer = useRef<DrawingPoint[]>([]);
+  // Interval ref
+  const drawIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   const getContext = useCallback(() => canvasRef.current?.getContext('2d', { willReadFrequently: true }), []);
   
+  const applyAction = useCallback((ctx: CanvasRenderingContext2D, action: DrawingAction) => {
+    if (!ctx) return;
+
+    if (action.tool === 'pencil' || action.tool === 'eraser') {
+        drawSingleLine(ctx, action);
+    } else if (action.tool === 'fill') {
+        performFloodFill(ctx, action.x, action.y, hexToRgb(action.color));
+    } else if (action.tool === 'clear') {
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    }
+  }, []);
+
   const redrawCanvas = useCallback((history: DrawingAction[]) => {
     const canvas = canvasRef.current;
     const ctx = getContext();
@@ -45,18 +60,7 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
         applyAction(ctx, action);
       });
     }
-  }, [getContext]);
-
-  const applyAction = useCallback((ctx: CanvasRenderingContext2D, action: DrawingAction) => {
-    if (!ctx) return;
-    if (action.tool === 'pencil' || action.tool === 'eraser') {
-      drawSingleLine(ctx, action);
-    } else if (action.tool === 'fill') {
-      performFloodFill(ctx, action.x, action.y, hexToRgb(action.color));
-    } else if (action.tool === 'clear') {
-      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    }
-  }, []);
+  }, [getContext, applyAction]);
   
   // Effect to handle canvas resizing and initial draw
   useEffect(() => {
@@ -66,24 +70,31 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
     const resizeCanvas = () => {
       const parent = canvas.parentElement;
       if (parent) {
+        // Save current drawing
+        const currentDrawing = canvas.toDataURL();
         canvas.width = parent.clientWidth;
         canvas.height = parent.clientHeight;
-        redrawCanvas(drawingHistory);
+        // Restore drawing
+        const img = new Image();
+        img.src = currentDrawing;
+        img.onload = () => {
+            getContext()?.drawImage(img, 0, 0);
+        }
       }
     };
+
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
+    // Full redraw when history changes
+    if (room?.drawingHistory) {
+      redrawCanvas(room.drawingHistory);
+    }
 
     return () => {
       window.removeEventListener('resize', resizeCanvas);
     };
-  }, [drawingHistory, redrawCanvas]);
+  }, [room?.drawingHistory, redrawCanvas, getContext]);
 
-  // Effect to redraw canvas when history changes from server
-  useEffect(() => {
-    redrawCanvas(drawingHistory);
-  }, [drawingHistory, redrawCanvas]);
-  
   const getCoords = (e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -98,21 +109,40 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawer || currentTool === 'fill') return;
     
-    const { x, y } = getCoords(e);
     setIsDrawing(true);
+    const { x, y } = getCoords(e);
+    pointsBuffer.current = [{x, y}]; // Start new line
 
+     // Draw the initial dot
     const color = currentTool === 'eraser' ? '#FFFFFF' : brushColor;
-    const newLine: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize, isStartOfLine: true };
-    
+    const initialLine: Line = { tool: currentTool, points: [{ x, y }, {x,y}], color, size: brushSize };
     const ctx = getContext();
-    if(ctx) {
-        applyAction(ctx, newLine);
+    if (ctx) {
+        applyAction(ctx, initialLine);
     }
     
-    socket?.emit('drawingAction', { roomId, action: newLine });
-    lastPointRef.current = { x, y };
+    // Start interval to send points
+    if (drawIntervalRef.current) clearInterval(drawIntervalRef.current);
+    drawIntervalRef.current = setInterval(sendPoints, 20); // Send points every 20ms
   };
   
+  const sendPoints = () => {
+      if (pointsBuffer.current.length === 0) return;
+      
+      const color = currentTool === 'eraser' ? '#FFFFFF' : brushColor;
+      const lineToSend: Line = {
+          tool: currentTool,
+          points: [...pointsBuffer.current],
+          color,
+          size: brushSize,
+      };
+
+      socket?.emit('drawingAction', { roomId, action: lineToSend });
+      
+      // Keep last point for smooth connection
+      pointsBuffer.current = [pointsBuffer.current[pointsBuffer.current.length-1]];
+  };
+
   const handleFill = (e: React.MouseEvent) => {
     if(!isDrawer || currentTool !== 'fill') return;
     const { x, y } = getCoords(e);
@@ -132,50 +162,49 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
     if (!isDrawing || !isDrawer) return;
     
     const { x, y } = getCoords(e);
-    const lastPoint = lastPointRef.current;
-    if (!lastPoint) return;
-    
+    const lastPoint = pointsBuffer.current[pointsBuffer.current.length - 1];
+
+    // Create a line segment for local rendering
     const color = currentTool === 'eraser' ? '#FFFFFF' : brushColor;
-    const lineSegment: Line = { tool: currentTool, points: [lastPoint, { x, y }], color, size: brushSize, isStartOfLine: false };
+    const lineSegment: Line = { tool: currentTool, points: [lastPoint, { x, y }], color, size: brushSize };
 
     const ctx = getContext();
     if(ctx) {
         applyAction(ctx, lineSegment);
     }
-
-    socket?.emit('drawingAction', { roomId, action: lineSegment });
-    lastPointRef.current = { x, y };
+    
+    pointsBuffer.current.push({ x, y });
   };
 
   const stopDrawing = () => {
     if (!isDrawing || !isDrawer) return;
     setIsDrawing(false);
-    lastPointRef.current = null;
     
-    const ctx = getContext();
-    if(ctx) {
-        ctx.beginPath();
+    // Stop the interval
+    if (drawIntervalRef.current) {
+        clearInterval(drawIntervalRef.current);
+        drawIntervalRef.current = null;
     }
+
+    // Send any remaining points
+    sendPoints();
+
+    pointsBuffer.current = []; // Clear buffer
   };
 
   const drawSingleLine = (ctx: CanvasRenderingContext2D, line: Line) => {
-    if (line.points.length === 0) return;
+    if (line.points.length < 1) return;
     
     ctx.strokeStyle = line.tool === 'eraser' ? '#FFFFFF' : line.color;
     ctx.lineWidth = line.size;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-
-    ctx.beginPath();
     
-    if (line.points.length === 1) {
-        ctx.moveTo(line.points[0].x, line.points[0].y);
-        ctx.lineTo(line.points[0].x, line.points[0].y);
-    } else {
-        ctx.moveTo(line.points[0].x, line.points[0].y);
-        for (let i = 1; i < line.points.length; i++) {
-            ctx.lineTo(line.points[i].x, line.points[i].y);
-        }
+    ctx.beginPath();
+    ctx.moveTo(line.points[0].x, line.points[0].y);
+    
+    for (let i = 1; i < line.points.length; i++) {
+        ctx.lineTo(line.points[i].x, line.points[i].y);
     }
     
     ctx.stroke();
@@ -298,7 +327,7 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
             currentTool={currentTool}
             setCurrentTool={setCurrentTool}
             onUndo={handleUndo}
-            canUndo={drawingHistory.length > 0}
+            canUndo={room?.drawingHistory.length > 0}
         />
       )}
     </div>

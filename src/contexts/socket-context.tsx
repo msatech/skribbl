@@ -1,8 +1,9 @@
+
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import type { Room, Player, ChatMessage, DrawingAction, Line } from '@/types';
+import type { Room, Player, ChatMessage, DrawingAction } from '@/types';
 import { useAudio, Sound } from '@/hooks/use-audio';
 import { useToast } from '@/hooks/use-toast';
 
@@ -39,12 +40,19 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const [finalScores, setFinalScores] = useState<Player[]>([]);
   const { playSound } = useAudio();
   const { toast } = useToast();
+  
+  // Ref to hold the drawing buffer
+  const drawingBuffer = React.useRef<any[]>([]);
 
   useEffect(() => {
     const socketInstance = io(SERVER_URL, {
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
         transports: ['websocket'],
+        cors: {
+          origin: "http://localhost:9002",
+          methods: ["GET", "POST"]
+        }
     });
     setSocket(socketInstance);
 
@@ -62,7 +70,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     
     socketInstance.on('connect_error', (err) => {
         console.error('Connection Error:', err.message);
-        if(err.message.includes('xhr poll error')) {
+        if(err.message.includes('xhr poll error') || err.message.includes('timeout')) {
             toast({ variant: 'destructive', title: 'Connection Error', description: 'Could not connect to the game server. Is it running?' });
         }
     });
@@ -77,13 +85,16 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     
     const handleRoomState = (newRoomState: Room) => {
         setRoom(prevRoom => {
+             // If drawing history is smaller, it's likely an undo action, so replace it fully.
             if (prevRoom && newRoomState.drawingHistory.length < prevRoom.drawingHistory.length) {
-                return { ...newRoomState, drawingHistory: newRoomState.drawingHistory };
+                return { ...newRoomState };
             }
+            // For other updates, just update the room state
             return newRoomState;
         });
         if(newRoomState.gameState.status === 'waiting') {
             setChatMessages([]);
+            setFinalScores([]);
         }
     };
 
@@ -96,35 +107,21 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const handleDrawingAction = (action: DrawingAction) => {
+      // Don't apply actions if you are the drawer, to prevent double-drawing
+      if (socket.id === room?.gameState.currentDrawerId) return;
+      
       setRoom(prevRoom => {
         if (!prevRoom) return null;
-        if (socket.id === prevRoom.gameState.currentDrawerId) return prevRoom;
 
         let newHistory = [...prevRoom.drawingHistory];
-        
+
         if (action.tool === 'clear') {
-          newHistory = [];
-        } else if (action.tool === 'pencil' || action.tool === 'eraser') {
-            if (action.isStartOfLine) {
-                newHistory.push(action);
-            } else {
-                const lastStroke = newHistory.find(a => (a.tool === 'pencil' || a.tool === 'eraser') && a.isStartOfLine);
-                if(lastStroke && (lastStroke.tool === 'pencil' || lastStroke.tool === 'eraser')) {
-                  const lastPoint = lastStroke.points[lastStroke.points.length - 1];
-                  const newPoints = action.points;
-                  if (lastPoint && newPoints.length > 0 && lastPoint.x === newPoints[0].x && lastPoint.y === newPoints[0].y) {
-                    lastStroke.points.push(...newPoints.slice(1));
-                  } else {
-                     lastStroke.points.push(...newPoints);
-                  }
-                } else {
-                   newHistory.push(action);
-                }
-            }
+            newHistory = [];
+        } else if (action.tool === 'undo') {
+            // This is now handled by full roomState updates
         } else {
-          newHistory.push(action);
+            newHistory.push(action);
         }
-        
         return { ...prevRoom, drawingHistory: newHistory };
       });
     };
@@ -159,7 +156,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
         socket.off('error', handleError);
     }
 
-  }, [socket, playSound, toast]);
+  }, [socket, playSound, toast, room?.gameState.currentDrawerId]);
 
   const me = room && socket ? room.players.find(p => p.id === socket.id) : null;
 

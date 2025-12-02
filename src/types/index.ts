@@ -1,3 +1,4 @@
+
 import { type DrawingAction as CanvasDrawingAction, type Line as CanvasLine } from "@/app/(game)/room/[roomId]/canvas";
 
 // Re-exporting with a more specific name if needed, or just use it directly
