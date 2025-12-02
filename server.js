@@ -86,6 +86,7 @@ app.prepare().then(() => {
         gameState: {
           status: 'waiting',
           currentRound: 0,
+          turn: -1,
           currentDrawer: null,
           currentWord: '',
           timer: 0,
@@ -139,10 +140,17 @@ app.prepare().then(() => {
       const room = rooms[roomId];
       if (!room || room.players.length < 2) return;
 
-      room.gameState.status = 'playing';
-      room.gameState.currentRound = 0; 
       room.players.forEach(p => p.score = 0);
-      io.to(roomId).emit('roomState', room);
+      room.gameState = {
+          ...room.gameState,
+          status: 'playing',
+          currentRound: 0,
+          turn: -1,
+          currentDrawer: null,
+          guessedPlayers: [],
+          currentWord: '',
+      };
+      
       startRound(roomId);
     };
 
@@ -152,19 +160,19 @@ app.prepare().then(() => {
 
         if (room.timerInterval) clearInterval(room.timerInterval);
 
-        const currentDrawerIndex = room.players.findIndex(p => p.id === room.gameState.currentDrawer);
-        const nextDrawerIndex = (currentDrawerIndex + 1) % room.players.length;
+        room.gameState.turn++;
 
-        if (nextDrawerIndex === 0) {
-            room.gameState.currentRound += 1;
+        if (room.gameState.turn >= room.players.length) {
+            room.gameState.turn = 0;
+            room.gameState.currentRound++;
         }
         
-        if (room.gameState.currentRound > room.settings.rounds) {
+        if (room.gameState.currentRound >= room.settings.rounds) {
             endGame(roomId);
             return;
         }
 
-        const nextDrawer = room.players[nextDrawerIndex];
+        const nextDrawer = room.players[room.gameState.turn];
         if (!nextDrawer) {
             endGame(roomId);
             return;
@@ -175,14 +183,17 @@ app.prepare().then(() => {
         room.gameState.status = 'choosing_word';
         room.gameState.currentWord = '';
         room.drawingData = [];
+        
         io.to(roomId).emit('clearCanvas');
-        io.to(roomId).emit('roomState', room);
-
-        const currentDrawerNickname = nextDrawer.nickname || 'Someone';
-        io.to(roomId).emit('systemMessage', { content: `${currentDrawerNickname} is choosing a word...` });
 
         const wordChoices = getShuffledWords(3, room.settings, roomId);
+        
+        // IMPORTANT: Emit chooseWord to the drawer first
         io.to(nextDrawer.id).emit('chooseWord', wordChoices);
+        
+        // Then update the state for everyone else
+        io.to(roomId).emit('roomState', room);
+        io.to(roomId).emit('systemMessage', { content: `${nextDrawer.nickname} is choosing a word...` });
     };
 
 
@@ -194,6 +205,10 @@ app.prepare().then(() => {
         room.gameState.timer = room.settings.drawTime;
         room.gameState.hintsUsed = 0;
         
+        const wordMask = getWordMask(room.gameState.currentWord, roomId);
+        io.to(roomId).emit('wordUpdate', { word: wordMask });
+        io.to(room.gameState.currentDrawer).emit('wordUpdate', { word: room.gameState.currentWord, forDrawer: true });
+
         io.to(roomId).emit('roomState', room);
         const drawer = room.players.find(p => p.id === room.gameState.currentDrawer);
         if (drawer) {
@@ -211,11 +226,15 @@ app.prepare().then(() => {
             
             if (room.gameState.currentWord && room.settings.hints > 0) {
                 const timePerHint = Math.floor(room.settings.drawTime / (room.settings.hints + 1));
-                if (room.gameState.timer > 0 && room.gameState.timer % timePerHint === 0 && room.gameState.hintsUsed < room.settings.hints) {
-                    room.gameState.hintsUsed++;
-                    const wordWithHints = getWordWithHints(room.gameState.currentWord, room.gameState.hintsUsed, room.settings.hints, roomId);
-                    io.to(roomId).emit('wordUpdate', { word: wordWithHints });
-                    io.to(room.gameState.currentDrawer).emit('wordUpdate', { word: room.gameState.currentWord, forDrawer: true });
+                const hintsToShow = Math.floor((room.settings.drawTime - room.gameState.timer) / timePerHint) - room.gameState.hintsUsed;
+                
+                if (hintsToShow > 0) {
+                    room.gameState.hintsUsed += hintsToShow;
+                    if(room.gameState.hintsUsed <= room.settings.hints) {
+                      const wordWithHints = getWordWithHints(room.gameState.currentWord, room.gameState.hintsUsed, room.settings.hints, roomId);
+                      io.to(roomId).emit('wordUpdate', { word: wordWithHints });
+                      io.to(room.gameState.currentDrawer).emit('wordUpdate', { word: room.gameState.currentWord, forDrawer: true });
+                    }
                 }
             }
 
@@ -261,6 +280,7 @@ app.prepare().then(() => {
 
     const getWordMask = (word, roomId) => {
         const room = rooms[roomId];
+        if (!word) return '';
         if (room && room.settings.gameMode === 'combination') {
             return word.split(' ').map(w => '_'.repeat(w.length)).join(' + ');
         }
@@ -277,7 +297,7 @@ app.prepare().then(() => {
         const revealedParts = wordParts.map((part, index) => {
             let revealedCount = hintsPerPart + (index < extraHints ? 1 : 0);
             let revealedIndices = new Set();
-            while(revealedIndices.size < revealedCount) {
+            while(revealedIndices.size < revealedCount && revealedIndices.size < part.length) {
                 revealedIndices.add(Math.floor(Math.random() * part.length));
             }
             return part.split('').map((char, i) => revealedIndices.has(i) ? char : '_').join('');
@@ -294,8 +314,6 @@ app.prepare().then(() => {
       if (!room || socket.id !== room.gameState.currentDrawer) return;
       room.gameState.currentWord = word;
       room.gameState.guessedPlayers = [];
-      io.to(roomId).emit('wordUpdate', { word: getWordMask(word, roomId) });
-      io.to(socket.id).emit('wordUpdate', { word: word, forDrawer: true });
       beginDrawingPhase(roomId);
     });
 
@@ -310,7 +328,7 @@ app.prepare().then(() => {
           if (!room.gameState.guessedPlayers.includes(socket.id)) {
             
             const timeBonus = Math.floor(room.gameState.timer * 1.5);
-            const guessersCount = room.players.length - 1 - (room.gameState.currentDrawer ? 1 : 0);
+            const guessersCount = room.players.length - (room.gameState.currentDrawer ? 1 : 0);
             const orderBonus = Math.max(0, (guessersCount - room.gameState.guessedPlayers.length -1) * 50);
             const points = 100 + timeBonus + orderBonus;
             player.score += points;
@@ -367,24 +385,23 @@ app.prepare().then(() => {
           const removedPlayer = room.players.splice(playerIndex, 1)[0];
           io.to(roomId).emit('systemMessage', { content: `${removedPlayer.nickname} has left.` });
           io.to(roomId).emit('playSound', 'leave');
-
-          if (room.players.length === 0) {
+          
+          if (room.gameState.status !== 'waiting' && room.players.length < 2) {
+             endGame(roomId);
+          } else if (room.players.length === 0) {
             if (room.timerInterval) clearInterval(room.timerInterval);
             delete rooms[roomId];
           } else {
             if (removedPlayer.isHost && room.players.length > 0) {
               room.players[0].isHost = true;
             }
-             if (room.gameState.status !== 'waiting' && room.gameState.currentDrawer === socket.id) {
+             if (room.gameState.currentDrawer === socket.id) {
                endRound(roomId, 'drawer_left');
             }
-             if(room.gameState.status !== 'waiting' && room.players.length < 2) {
-                endGame(roomId);
-             }
              io.to(roomId).emit('roomState', room);
           }
           
-          if (room && !room.isPrivate) {
+          if (!room.isPrivate) {
             io.emit('publicRoomsUpdate', getPublicRooms());
           }
           break;
@@ -403,4 +420,5 @@ app.prepare().then(() => {
     });
 });
 
+    
     

@@ -1,12 +1,12 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSocket } from '@/contexts/socket-context';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useToast } from '@/hooks/use-toast';
-import type { Room, Player, SystemMessage } from '@/types';
+import type { Room, Player } from '@/types';
 import Canvas from './canvas';
 import Chat from './chat';
 import PlayerList from './player-list';
@@ -33,10 +33,11 @@ export default function GameRoom({ roomId }: { roomId: string }) {
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [isNicknameDialogOpen, setIsNicknameDialogOpen] = useState(!nickname);
+  const [word, setWord] = useState('');
 
-  const me = room?.players.find(p => p.id === socket?.id);
-  const isDrawer = me?.id === room?.gameState.currentDrawer;
-  
+  const me = useMemo(() => room?.players.find(p => p.id === socket?.id), [room, socket?.id]);
+  const isDrawer = useMemo(() => me?.id === room?.gameState.currentDrawer, [me, room]);
+
   useEffect(() => {
     if (!nickname) {
         setIsNicknameDialogOpen(true);
@@ -53,23 +54,42 @@ export default function GameRoom({ roomId }: { roomId: string }) {
       } else if (response.room) {
         setRoom(response.room);
         setTimeLeft(response.room.gameState.timer);
+        setWord(response.room.gameState.currentWord);
       }
     });
 
-    const onRoomState = (newRoom: Room) => setRoom(newRoom);
+    const onRoomState = (newRoom: Room) => {
+        setRoom(newRoom);
+        if(newRoom.gameState.status === 'playing') {
+            setWordChoices([]);
+        }
+    };
     const onTimerUpdate = (time: number) => setTimeLeft(time);
 
     const onChooseWord = (choices: string[]) => {
       setWordChoices(choices);
     };
+
+    const onWordUpdate = ({word: newWord, forDrawer}: {word: string, forDrawer: boolean}) => {
+        if(isDrawer || forDrawer) {
+            setWord(newWord);
+        } else {
+            setWord(newWord.replace(/[^\s]/g, '_'));
+        }
+    }
+    
     const onGameOver = (scores: Player[]) => {
       setFinalScores(scores);
       setIsLeaderboardOpen(true);
       playSound('game_over');
     };
-    const onRoundEnd = ({ word }: { word: string }) => {
-        setRevealedWord(word);
-        setTimeout(() => setRevealedWord(''), 5000);
+    const onRoundEnd = ({ word: finalWord }: { word: string }) => {
+        setRevealedWord(finalWord);
+        setWord(finalWord);
+        setTimeout(() => {
+            setRevealedWord('');
+            setWord('');
+        }, 5000);
     }
     const onPlaySound = (sound: any) => {
       playSound(sound);
@@ -81,6 +101,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     socket.on('gameOver', onGameOver);
     socket.on('roundEnd', onRoundEnd);
     socket.on('playSound', onPlaySound);
+    socket.on('wordUpdate', onWordUpdate);
     
     return () => {
       socket.off('roomState', onRoomState);
@@ -89,17 +110,19 @@ export default function GameRoom({ roomId }: { roomId: string }) {
       socket.off('gameOver', onGameOver);
       socket.off('roundEnd', onRoundEnd);
       socket.off('playSound', onPlaySound);
+      socket.off('wordUpdate', onWordUpdate);
     };
-  }, [isConnected, socket, roomId, nickname, router, toast, playSound]);
+  }, [isConnected, socket, roomId, nickname, router, toast, playSound, isDrawer]);
 
   const handleStartGame = () => {
     socket?.emit('startGame', { roomId });
     setIsLeaderboardOpen(false);
   };
   
-  const handleWordSelect = (word: string) => {
-    socket?.emit('wordChosen', { roomId, word });
+  const handleWordSelect = (selectedWord: string) => {
+    socket?.emit('wordChosen', { roomId, word: selectedWord });
     setWordChoices([]);
+    setWord(selectedWord);
   };
 
   const copyInviteLink = () => {
@@ -130,7 +153,17 @@ export default function GameRoom({ roomId }: { roomId: string }) {
   }
 
   const { gameState, players, settings } = room;
-  const wordDisplay = isDrawer ? gameState.currentWord : gameState.currentWord.replace(/[^\s]/g, '_');
+  
+  const wordDisplay = useMemo(() => {
+    if (gameState.status === 'playing' || gameState.status === 'ended_round') {
+        if (isDrawer) return word;
+        return word.split('').map(c => c === ' ' ? ' ' : '_').join('');
+    }
+    if(gameState.status === 'choosing_word') return 'Choosing word...';
+    if(gameState.status === 'ended_round') return `Word: ${revealedWord}`;
+    return 'Waiting...';
+  }, [gameState.status, isDrawer, word, revealedWord]);
+  
   const currentDrawer = players.find(p => p.id === gameState.currentDrawer);
 
   return (
@@ -150,9 +183,9 @@ export default function GameRoom({ roomId }: { roomId: string }) {
         
         <main className="lg:col-span-2 order-1 lg:order-2 bg-card rounded-lg border flex flex-col min-h-0">
             <div className="flex-shrink-0 flex justify-around items-center p-2 text-center border-b">
-                <div><span className="text-xs sm:text-sm text-muted-foreground">Round</span><br/><span className="font-bold text-sm sm:text-base">{Math.min(gameState.currentRound, settings.rounds)} / {settings.rounds}</span></div>
+                <div><span className="text-xs sm:text-sm text-muted-foreground">Round</span><br/><span className="font-bold text-sm sm:text-base">{Math.min(gameState.currentRound + 1, settings.rounds)} / {settings.rounds}</span></div>
                 <div className="text-base sm:text-lg font-bold tracking-widest text-center flex-1 px-2">
-                    {gameState.status === 'playing' ? wordDisplay.split('').join(' ') : (gameState.status === 'choosing_word' ? 'Choosing word...' : gameState.status === 'ended_round' ? `Word: ${revealedWord}` : 'Waiting...')}
+                    {wordDisplay.split('').join(' ')}
                 </div>
                 <div><span className="text-xs sm:text-sm text-muted-foreground">Time</span><br/><span className="font-bold text-sm sm:text-base">{timeLeft}</span></div>
             </div>
@@ -222,3 +255,5 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     </div>
   );
 }
+
+    
