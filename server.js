@@ -73,15 +73,28 @@ io.on('connection', (socket) => {
       return socket.emit('roomNotFound');
     }
 
-    const existingPlayer = room.players.find(p => p.uuid === playerUUID);
+    const playerByUUID = room.players.find(p => p.uuid === playerUUID);
+    const playerByNickname = room.players.find(p => p.nickname === nickname);
 
-    if (existingPlayer) {
+    if (playerByUUID) {
         console.log(`${nickname} (${playerUUID}) re-joined room: ${roomId}`);
-        existingPlayer.id = socket.id; // Update socket ID
-        existingPlayer.connected = true;
-        if (existingPlayer.disconnectTimeout) {
-            clearTimeout(existingPlayer.disconnectTimeout);
-            delete existingPlayer.disconnectTimeout;
+        playerByUUID.id = socket.id; // Update socket ID
+        playerByUUID.connected = true;
+        if (playerByUUID.disconnectTimeout) {
+            clearTimeout(playerByUUID.disconnectTimeout);
+            delete playerByUUID.disconnectTimeout;
+        }
+        io.to(roomId).emit('systemMessage', { content: `${nickname} has reconnected.`});
+    } else if (playerByNickname) {
+        // A player with this nickname already exists, but UUID is different.
+        // This can happen if user opens a new tab. We'll treat it as a rejoin.
+        console.log(`Player ${nickname} joined with new UUID. Updating existing player.`);
+        playerByNickname.id = socket.id;
+        playerByNickname.uuid = playerUUID; // Update to the new UUID
+        playerByNickname.connected = true;
+        if (playerByNickname.disconnectTimeout) {
+            clearTimeout(playerByNickname.disconnectTimeout);
+            delete playerByNickname.disconnectTimeout;
         }
         io.to(roomId).emit('systemMessage', { content: `${nickname} has reconnected.`});
     } else {
@@ -94,7 +107,7 @@ io.on('connection', (socket) => {
             uuid: playerUUID,
             nickname,
             score: 0,
-            isHost: room.players.length === 0, // First player is host
+            isHost: room.players.length === 0,
             connected: true,
         };
         room.players.push(newPlayer);
@@ -436,3 +449,5 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+    
