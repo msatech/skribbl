@@ -234,7 +234,7 @@ app.prepare().then(() => {
       const currentWord = room.gameState.currentWord;
       room.gameState.status = 'ended_round';
       
-      io.to(roomId).emit('playSound', 'time_up');
+      if (reason === 'time_up') io.to(roomId).emit('playSound', 'time_up');
       io.to(roomId).emit('systemMessage', { content: `Round over! The word was: ${currentWord}` });
       io.to(roomId).emit('roundEnd', { word: currentWord });
       io.to(roomId).emit('roomState', room); // Send final state of the round
@@ -402,5 +402,3 @@ app.prepare().then(() => {
       process.exit(1);
     });
 });
-
-    
