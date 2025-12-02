@@ -47,6 +47,11 @@ export default function HomePage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { socket, isConnected } = useSocket();
   const [publicRooms, setPublicRooms] = useState<PublicRoom[]>([]);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
@@ -54,10 +59,10 @@ export default function HomePage() {
   });
 
   useEffect(() => {
-    if (nickname) {
+    if (nickname && isClient) {
       form.setValue('nickname', nickname);
     }
-  }, [nickname, form]);
+  }, [nickname, form, isClient]);
   
   useEffect(() => {
     if (!socket || !isConnected) return;
@@ -123,6 +128,10 @@ export default function HomePage() {
       });
     }
   };
+
+  if (!isClient) {
+    return null; // or a loading spinner
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-4">
