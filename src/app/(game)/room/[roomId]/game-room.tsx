@@ -22,29 +22,14 @@ export default function GameRoom() {
   const params = useParams();
   const { toast } = useToast();
   const { socket, room, me, isConnected, setRoomId, chatMessages, finalScores, setFinalScores } = useSocket();
-  const { playSound, isMuted, toggleMute } = useAudio();
+  const { isMuted, toggleMute } = useAudio();
   const [nickname, setNickname] = useLocalStorage('nickname', '');
-  
-  useEffect(() => {
-      // Re-join if disconnected and reconnected
-      if (isConnected && socket && roomId && !me && nickname) {
-          socket.emit('joinRoom', { roomId, nickname });
-      }
-  }, [isConnected, socket, me, nickname]);
-
-  const handleRejoin = useCallback(() => {
-    if (socket && roomId && nickname && !me) {
-        socket.emit('joinRoom', { roomId, nickname });
-    }
-  }, [socket, nickname, me]);
-
-
   const [isNicknameModalOpen, setIsNicknameModalOpen] = useState(false);
   const [wordChoices, setWordChoices] = useState<string[]>([]);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   
   const roomId = params.roomId as string;
-  
+
   useEffect(() => {
     if (roomId) {
         setRoomId(roomId);
@@ -53,9 +38,16 @@ export default function GameRoom() {
     if (isConnected && !nickname) {
         setIsNicknameModalOpen(true);
     } else if (isConnected && nickname && roomId && !me) {
-        socket.emit('joinRoom', { roomId: roomId, nickname });
+        socket?.emit('joinRoom', { roomId: roomId, nickname });
     }
   }, [isConnected, nickname, roomId, setRoomId, me, socket]);
+  
+  // Re-join if disconnected and reconnected
+  useEffect(() => {
+    if (isConnected && socket && roomId && !me && nickname) {
+        socket.emit('joinRoom', { roomId, nickname });
+    }
+  }, [isConnected, socket, me, nickname, roomId]);
 
   useEffect(() => {
     if (!socket) return;

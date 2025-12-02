@@ -46,6 +46,7 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
   }, [getContext]);
 
   const applyAction = useCallback((ctx: CanvasRenderingContext2D, action: DrawingAction) => {
+    if (!ctx) return;
     if (action.tool === 'pencil' || action.tool === 'eraser') {
       drawSingleLine(ctx, action);
     } else if (action.tool === 'fill') {
@@ -95,11 +96,17 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawer) return;
     const { x, y } = getCoords(e);
+    const ctx = getContext();
+    if (!ctx) return;
     
     if (currentTool === 'pencil' || currentTool === 'eraser') {
       setIsDrawing(true);
       const color = currentTool === 'eraser' ? '#FFFFFF' : brushColor;
       const newLine: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize };
+      
+      // Optimistic update for the drawer
+      applyAction(ctx, newLine);
+
       socket?.emit('drawingAction', { roomId, action: newLine });
     }
     else if (currentTool === 'fill') {
@@ -110,11 +117,20 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
   const handleFill = (x: number, y: number) => {
     const color = brushColor;
     const fillAction: Fill = { tool: 'fill', x, y, color };
+    const ctx = getContext();
+
+    // Optimistic update
+    if (ctx) {
+      applyAction(ctx, fillAction);
+    }
+    
     socket?.emit('drawingAction', { roomId, action: fillAction });
   }
   
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing || !isDrawer) return;
+    const ctx = getContext();
+    if (!ctx) return;
     
     const { x, y } = getCoords(e);
     
@@ -122,15 +138,15 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
     // We emit an action with a single point. The server will aggregate them.
     const drawAction: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize };
     
+    // Optimistic update for the drawer
+    applyAction(ctx, drawAction);
+
     socket?.emit('drawingAction', { roomId, action: drawAction });
   };
 
   const stopDrawing = () => {
     if (!isDrawing || !isDrawer) return;
     setIsDrawing(false);
-    // Send a "line break" if needed by server logic.
-    // For now, we can just stop drawing. The server aggregates points into strokes.
-    // A more advanced implementation could send a specific 'endStroke' event.
   };
 
   const drawSingleLine = (ctx: CanvasRenderingContext2D, line: Line) => {
@@ -230,7 +246,13 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
   };
   
   const handleClear = () => {
-      socket?.emit('drawingAction', { roomId, action: { tool: 'clear' } });
+    const clearAction = { tool: 'clear' };
+    const ctx = getContext();
+    // Optimistic update
+    if (ctx) {
+      applyAction(ctx, clearAction);
+    }
+    socket?.emit('drawingAction', { roomId, action: clearAction });
   }
 
   const handleUndo = () => {

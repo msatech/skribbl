@@ -5,6 +5,8 @@ export type Sound = 'join' | 'leave' | 'correct_guess' | 'time_up' | 'game_over'
 
 type AudioContextType = {
   playSound: (sound: Sound) => void;
+  isMuted: boolean;
+  toggleMute: () => void;
 };
 
 const AudioContext = createContext<AudioContextType | undefined>(undefined);
@@ -61,7 +63,11 @@ export const AudioProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [audioFiles, isMuted]);
 
-  const value = useMemo(() => ({ playSound }), [playSound]);
+  const toggleMute = useCallback(() => {
+    setIsMuted(prev => !prev);
+  }, []);
+
+  const value = useMemo(() => ({ playSound, isMuted, toggleMute }), [playSound, isMuted, toggleMute]);
 
   return (
     <AudioContext.Provider value={value}>

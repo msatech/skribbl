@@ -37,7 +37,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [finalScores, setFinalScores] = useState<Player[]>([]);
-  const { playSound } = useAudio();
+  const { playSound, isMuted, toggleMute } = useAudio();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -61,7 +61,9 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     
     socketInstance.on('connect_error', (err) => {
         console.error('Connection Error:', err.message);
-        toast({ variant: 'destructive', title: 'Connection Error', description: 'Could not connect to the game server.' });
+        if(err.message.includes('xhr poll error')) {
+            toast({ variant: 'destructive', title: 'Connection Error', description: 'Could not connect to the game server. Is it running?' });
+        }
     });
 
     return () => {
