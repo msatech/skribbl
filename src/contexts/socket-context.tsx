@@ -10,7 +10,7 @@ interface SocketContextType {
   socket: Socket | null;
   isConnected: boolean;
   room: Room | null;
-  me: Player | null;
+  me: Player | null | undefined;
   roomId: string | null;
   setRoomId: (id: string | null) => void;
   chatMessages: ChatMessage[];
@@ -44,6 +44,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     const socketInstance = io(SERVER_URL, {
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
+        transports: ['websocket'],
     });
     setSocket(socketInstance);
 
@@ -160,7 +161,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
 
   const me = room && socket ? room.players.find(p => p.id === socket.id) : null;
 
-  const value = {
+  const value: SocketContextType = {
     socket,
     isConnected,
     room,
