@@ -28,13 +28,13 @@ export const useSocket = () => {
   return context;
 };
 
-const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3001';
+const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL!;
 
-export const SocketProvider = ({ children, roomId: initialRoomId }: { children: ReactNode, roomId?: string }) => {
+export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [room, setRoom] = useState<Room | null>(null);
-  const [roomId, setRoomId] = useState<string | null>(initialRoomId || null);
+  const [roomId, setRoomId] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [finalScores, setFinalScores] = useState<Player[]>([]);
   const { playSound } = useAudio();
@@ -89,14 +89,9 @@ export const SocketProvider = ({ children, roomId: initialRoomId }: { children: 
         if (action.tool === 'clear') {
           newHistory = [];
         } else if (action.tool === 'undo') {
-            const lastLineStartIndex = findLastContinuousStrokeIndex(newHistory);
-            if (lastLineStartIndex !== -1) {
-              // If it was a continuous line, slice off the whole segment
-               newHistory = newHistory.slice(0, lastLineStartIndex);
-            } else {
-              // Otherwise, just pop the last action (dot, or something else)
-              newHistory.pop();
-            }
+            // Undo logic on the server is now the source of truth.
+            // Client-side prediction of undo is removed to avoid desync.
+            // The server will send a new roomState with the updated history.
         } else if (action.tool === 'pencil' || action.tool === 'eraser') {
           const lastAction = newHistory[newHistory.length - 1];
           // If the last action was a point in the same continuous stroke, append to it.
@@ -115,27 +110,11 @@ export const SocketProvider = ({ children, roomId: initialRoomId }: { children: 
       });
     };
 
-    const findLastContinuousStrokeIndex = (history: DrawingAction[]): number => {
-       const lastAction = history[history.length - 1];
-       if (!lastAction || (lastAction.tool !== 'pencil' && lastAction.tool !== 'eraser')) return -1;
-       
-       if(lastAction.points.length > 1) { // This action itself is a line
-          return history.length -1;
-       }
-
-       // Find the start of the line this single point belongs to
-       for(let i = history.length - 2; i >= 0; i--) {
-          const current = history[i];
-          if(current.tool !== 'pencil' && current.tool !== 'eraser') return history.length -1;
-           if(current.points.length > 1) return i; // Found the start of a previous line segment
-       }
-       return history.length - 1; // It's a single dot
-    }
-
     const isDrawingContinuousLine = (lastAction: DrawingAction | undefined, currentAction: DrawingAction): boolean => {
         if (!lastAction || lastAction.tool !== currentAction.tool) return false;
         if (lastAction.tool !== 'pencil' && lastAction.tool !== 'eraser') return false;
         if (currentAction.tool !== 'pencil' && currentAction.tool !== 'eraser') return false;
+        if ((lastAction as Line).points.length > 1) return false;
         // This is a simple check. A more robust system might use stroke IDs.
         // It assumes sequential points of the same tool are part of the same line.
         return true;
