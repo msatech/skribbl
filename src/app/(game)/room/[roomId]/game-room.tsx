@@ -145,7 +145,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
       
       <div className="flex-grow grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-0">
         <aside className="hidden lg:flex lg:col-span-1 order-2 lg:order-1 flex-col gap-4 min-h-0">
-          <PlayerList players={players} currentDrawerId={gameState.currentDrawer} />
+          <PlayerList players={players} currentDrawerId={gameState.currentDrawer} guessedPlayerIds={gameState.guessedPlayers} />
         </aside>
         
         <main className="lg:col-span-2 order-1 lg:order-2 bg-card rounded-lg border flex flex-col min-h-0">
@@ -187,7 +187,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
                 </Button>
             </SheetTrigger>
             <SheetContent side="bottom" className="h-[75vh] p-0 flex flex-col">
-                <PlayerList players={players} currentDrawerId={gameState.currentDrawer} />
+                <PlayerList players={players} currentDrawerId={gameState.currentDrawer} guessedPlayerIds={gameState.guessedPlayers} />
                 <Chat roomId={roomId} players={players} me={me} isDrawer={!!isDrawer} />
             </SheetContent>
           </Sheet>

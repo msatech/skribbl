@@ -31,6 +31,7 @@ export type GameState = {
   currentWord: string;
   timer: number;
   hintsUsed: number;
+  guessedPlayers: string[];
 };
 
 export type Room = {
@@ -41,7 +42,6 @@ export type Room = {
   settings: GameSettings;
   gameState: GameState;
   drawingData: any[];
-  guessedPlayers?: Set<string>;
 };
 
 export type PublicRoom = {
