@@ -1,5 +1,6 @@
+
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -19,24 +20,48 @@ type WordChoiceModalProps = {
 
 export default function WordChoiceModal({ isOpen, words, onSelectWord, time }: WordChoiceModalProps) {
   const [timeLeft, setTimeLeft] = useState(time);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const chosenRef = useRef(false);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      chosenRef.current = false;
       setTimeLeft(time);
-      return;
+      
+      timerRef.current = setInterval(() => {
+        setTimeLeft(prev => prev - 1);
+      }, 1000);
+
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
     }
 
-    if (timeLeft <= 0) {
-      onSelectWord(words[Math.floor(Math.random() * words.length)]);
-      return;
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [isOpen, time]);
+
+  useEffect(() => {
+    if (timeLeft <= 0 && isOpen && !chosenRef.current) {
+      if (words.length > 0) {
+        onSelectWord(words[Math.floor(Math.random() * words.length)]);
+        chosenRef.current = true;
+      }
+      if (timerRef.current) clearInterval(timerRef.current);
     }
+  }, [timeLeft, isOpen, onSelectWord, words]);
 
-    const timer = setInterval(() => {
-      setTimeLeft(prev => prev - 1);
-    }, 1000);
 
-    return () => clearInterval(timer);
-  }, [isOpen, timeLeft, onSelectWord, words, time]);
+  const handleSelect = (word: string) => {
+    if (chosenRef.current) return;
+    chosenRef.current = true;
+    onSelectWord(word);
+    if (timerRef.current) clearInterval(timerRef.current);
+  }
 
   return (
     <Dialog open={isOpen}>
@@ -50,7 +75,7 @@ export default function WordChoiceModal({ isOpen, words, onSelectWord, time }: W
         <div className="flex flex-col items-center gap-4 py-4">
           <div className="flex justify-center gap-2 sm:gap-4">
             {words.map((word) => (
-              <Button key={word} onClick={() => onSelectWord(word)} className="text-base sm:text-lg px-4 py-4 sm:px-6 sm:py-6 flex-1">
+              <Button key={word} onClick={() => handleSelect(word)} className="text-base sm:text-lg px-4 py-4 sm:px-6 sm:py-6 flex-1">
                 {word}
               </Button>
             ))}
@@ -64,3 +89,5 @@ export default function WordChoiceModal({ isOpen, words, onSelectWord, time }: W
     </Dialog>
   );
 }
+
+    

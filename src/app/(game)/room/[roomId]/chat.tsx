@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -35,12 +36,14 @@ export default function Chat({ roomId, players, me, isDrawer }: ChatProps) {
     
     socket?.on('newMessage', onNewMessage);
     socket?.on('systemMessage', onSystemMessage);
-    socket?.on('roundEnd', () => setMessages([]));
+    socket?.on('roundEnd', () => setTimeout(() => setMessages([]), 5000));
+    socket?.on('chooseWord', () => setMessages([]));
 
     return () => {
       socket?.off('newMessage', onNewMessage);
       socket?.off('systemMessage', onSystemMessage);
       socket?.off('roundEnd');
+      socket?.off('chooseWord');
     };
   }, [socket]);
   
@@ -103,3 +106,4 @@ export default function Chat({ roomId, players, me, isDrawer }: ChatProps) {
     </div>
   );
 }
+    

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -5,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { Sparkles, Users, Lock, Plus, LogIn } from 'lucide-react';
+import { Sparkles, Users, Plus, LogIn, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -106,12 +107,13 @@ export default function HomePage() {
   
   const handleJoinRoom = (roomId: string) => {
     const currentNickname = form.getValues('nickname');
-    if (!currentNickname) {
+    if (!currentNickname || currentNickname.length < 2) {
         toast({
             variant: "destructive",
             title: "Nickname required",
-            description: "Please enter a nickname before joining a room.",
+            description: "Please enter a valid nickname before joining a room.",
         });
+        form.setFocus('nickname');
         return;
     }
     setNickname(currentNickname);
@@ -130,7 +132,11 @@ export default function HomePage() {
   };
 
   if (!isClient) {
-    return null; // or a loading spinner
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center p-4">
+        <Loader2 className="h-16 w-16 animate-spin text-primary" />
+      </div>
+    );
   }
 
   return (
@@ -154,7 +160,7 @@ export default function HomePage() {
                         <Input placeholder="Enter your nickname" {...field} />
                       </FormControl>
                       <Button type="button" variant="outline" size="icon" onClick={handleSuggestNickname} disabled={isSuggesting}>
-                        <Sparkles className={`h-4 w-4 ${isSuggesting ? 'animate-spin' : ''}`} />
+                        {isSuggesting ? <Loader2 className="h-4 w-4 animate-spin"/> : <Sparkles className="h-4 w-4" />}
                       </Button>
                     </div>
                     <FormMessage />
@@ -200,3 +206,5 @@ export default function HomePage() {
     </div>
   );
 }
+
+    

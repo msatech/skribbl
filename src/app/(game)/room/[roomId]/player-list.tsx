@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Crown, Paintbrush, Users, CheckCircle2 } from 'lucide-react';
@@ -44,11 +45,20 @@ export default function PlayerList({ players, currentDrawerId, guessedPlayerIds 
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="font-semibold text-primary">{player.score}</span>
-                  {hasGuessed && player.id !== currentDrawerId && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+                  {hasGuessed && player.id !== currentDrawerId && (
+                    <Tooltip>
+                      <TooltipTrigger>
+                         <CheckCircle2 className="h-5 w-5 text-green-500" />
+                      </TooltipTrigger>
+                       <TooltipContent>
+                        <p>Guessed correctly!</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                   {player.id === currentDrawerId && (
                     <Tooltip>
                       <TooltipTrigger>
-                        <Paintbrush className="h-5 w-5 text-accent" />
+                        <Paintbrush className="h-5 w-5 text-blue-500" />
                       </TooltipTrigger>
                       <TooltipContent>
                         <p>Drawing</p>
@@ -75,3 +85,5 @@ export default function PlayerList({ players, currentDrawerId, guessedPlayerIds 
     </Card>
   );
 }
+
+    

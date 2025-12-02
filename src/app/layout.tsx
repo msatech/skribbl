@@ -1,9 +1,11 @@
+
 import type { Metadata } from 'next';
 import { Inter, Source_Code_Pro } from 'next/font/google';
 import { Toaster } from '@/components/ui/toaster';
 import './globals.css';
 import { cn } from '@/lib/utils';
 import { SocketProvider } from '@/contexts/socket-context';
+import { AudioProvider } from '@/hooks/use-audio';
 
 const fontBody = Inter({
   subsets: ['latin'],
@@ -34,10 +36,14 @@ export default function RootLayout({
       </head>
       <body className={cn('font-body antialiased', fontBody.variable, fontCode.variable)}>
         <SocketProvider>
-          {children}
-          <Toaster />
+          <AudioProvider>
+            {children}
+            <Toaster />
+          </AudioProvider>
         </SocketProvider>
       </body>
     </html>
   );
 }
+
+    
