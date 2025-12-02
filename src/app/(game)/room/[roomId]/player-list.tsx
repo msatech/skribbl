@@ -44,7 +44,7 @@ export default function PlayerList({ players, currentDrawerId, guessedPlayerIds 
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="font-semibold text-primary">{player.score}</span>
-                  {hasGuessed && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+                  {hasGuessed && player.id !== currentDrawerId && <CheckCircle2 className="h-5 w-5 text-green-500" />}
                   {player.id === currentDrawerId && (
                     <Tooltip>
                       <TooltipTrigger>

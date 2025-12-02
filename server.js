@@ -147,7 +147,7 @@ app.prepare().then(() => {
       const room = rooms[roomId];
       if (!room || room.gameState.status !== 'playing') return;
 
-      const drawerIndex = (room.gameState.currentRound - 1) % room.players.length;
+      const drawerIndex = (room.gameState.currentRound - 1 + room.players.indexOf(room.players.find(p => p.id === room.gameState.currentDrawer)) + 1) % room.players.length;
       const drawer = room.players[drawerIndex];
 
       if (!drawer) {
@@ -204,7 +204,7 @@ app.prepare().then(() => {
 
       setTimeout(() => {
         if (!rooms[roomId]) return;
-        if (room.gameState.currentRound >= room.settings.rounds) {
+        if (room.gameState.currentRound >= room.settings.rounds * room.players.length) {
           endGame(roomId);
         } else {
           room.gameState.currentRound += 1;
@@ -367,5 +367,3 @@ app.prepare().then(() => {
       process.exit(1);
     });
 });
-
-    
