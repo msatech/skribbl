@@ -27,7 +27,6 @@ export default function GameRoom({ roomId }: { roomId: string }) {
   const { playSound } = useAudio();
 
   const [room, setRoom] = useState<Room | null>(null);
-  const [wordToDraw, setWordToDraw] = useState('');
   const [revealedWord, setRevealedWord] = useState('');
   const [wordChoices, setWordChoices] = useState<string[]>([]);
   const [finalScores, setFinalScores] = useState<Player[]>([]);
@@ -51,16 +50,15 @@ export default function GameRoom({ roomId }: { roomId: string }) {
       if (response.status !== 'ok') {
         toast({ variant: 'destructive', title: 'Could not join room', description: response.message });
         router.push('/');
+      } else if (response.room) {
+        setRoom(response.room);
+        setTimeLeft(response.room.gameState.timer);
       }
     });
 
     const onRoomState = (newRoom: Room) => setRoom(newRoom);
     const onTimerUpdate = (time: number) => setTimeLeft(time);
-    const onWordUpdate = ({ word, forDrawer }: { word: string, forDrawer?: boolean }) => {
-        if (forDrawer || !isDrawer) {
-          setWordToDraw(word);
-        }
-    };
+
     const onChooseWord = (choices: string[]) => {
       setWordChoices(choices);
     };
@@ -71,16 +69,14 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     };
     const onRoundEnd = ({ word }: { word: string }) => {
         setRevealedWord(word);
-        playSound('time_up');
         setTimeout(() => setRevealedWord(''), 5000);
     }
-    const onPlaySound = (sound: string) => {
-      playSound(sound as any);
+    const onPlaySound = (sound: any) => {
+      playSound(sound);
     };
     
     socket.on('roomState', onRoomState);
     socket.on('timerUpdate', onTimerUpdate);
-    socket.on('wordUpdate', onWordUpdate);
     socket.on('chooseWord', onChooseWord);
     socket.on('gameOver', onGameOver);
     socket.on('roundEnd', onRoundEnd);
@@ -89,13 +85,12 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     return () => {
       socket.off('roomState', onRoomState);
       socket.off('timerUpdate', onTimerUpdate);
-      socket.off('wordUpdate', onWordUpdate);
       socket.off('chooseWord', onChooseWord);
       socket.off('gameOver', onGameOver);
       socket.off('roundEnd', onRoundEnd);
       socket.off('playSound', onPlaySound);
     };
-  }, [isConnected, socket, roomId, nickname, router, toast, playSound, isDrawer]);
+  }, [isConnected, socket, roomId, nickname, router, toast, playSound]);
 
   const handleStartGame = () => {
     socket?.emit('startGame', { roomId });
@@ -104,7 +99,6 @@ export default function GameRoom({ roomId }: { roomId: string }) {
   
   const handleWordSelect = (word: string) => {
     socket?.emit('wordChosen', { roomId, word });
-    setWordToDraw(word);
     setWordChoices([]);
   };
 
@@ -136,7 +130,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
   }
 
   const { gameState, players, settings } = room;
-  const wordDisplay = isDrawer ? wordToDraw : wordToDraw.split('').join(' ');
+  const wordDisplay = isDrawer ? gameState.currentWord : gameState.currentWord.replace(/[^\s]/g, '_');
   const currentDrawer = players.find(p => p.id === gameState.currentDrawer);
 
   return (
@@ -158,7 +152,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
             <div className="flex-shrink-0 flex justify-around items-center p-2 text-center border-b">
                 <div><span className="text-xs sm:text-sm text-muted-foreground">Round</span><br/><span className="font-bold text-sm sm:text-base">{Math.min(gameState.currentRound, settings.rounds)} / {settings.rounds}</span></div>
                 <div className="text-base sm:text-lg font-bold tracking-widest text-center flex-1 px-2">
-                    {gameState.status === 'playing' ? wordDisplay : (gameState.status === 'choosing_word' ? 'Choosing word...' : gameState.status === 'ended_round' ? `Word: ${revealedWord}` : 'Waiting...')}
+                    {gameState.status === 'playing' ? wordDisplay.split('').join(' ') : (gameState.status === 'choosing_word' ? 'Choosing word...' : gameState.status === 'ended_round' ? `Word: ${revealedWord}` : 'Waiting...')}
                 </div>
                 <div><span className="text-xs sm:text-sm text-muted-foreground">Time</span><br/><span className="font-bold text-sm sm:text-base">{timeLeft}</span></div>
             </div>
@@ -228,5 +222,3 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     </div>
   );
 }
-
-    
