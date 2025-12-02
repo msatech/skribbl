@@ -28,7 +28,7 @@ export const useSocket = () => {
   return context;
 };
 
-const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL!;
+const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3001';
 
 export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -57,6 +57,10 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
       setIsConnected(false);
       setRoom(null);
       setChatMessages(prev => [...prev, { type: 'system', content: 'You have been disconnected. Attempting to reconnect...' }]);
+    });
+    
+    socketInstance.on('connect_error', (err) => {
+        console.error('Connection Error:', err.message);
     });
 
     return () => {
@@ -114,7 +118,6 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
         if (!lastAction || lastAction.tool !== currentAction.tool) return false;
         if (lastAction.tool !== 'pencil' && lastAction.tool !== 'eraser') return false;
         if (currentAction.tool !== 'pencil' && currentAction.tool !== 'eraser') return false;
-        if ((lastAction as Line).points.length > 1) return false;
         // This is a simple check. A more robust system might use stroke IDs.
         // It assumes sequential points of the same tool are part of the same line.
         return true;
