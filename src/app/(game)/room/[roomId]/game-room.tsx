@@ -15,11 +15,13 @@ import LeaderboardDialog from './leaderboard-dialog';
 import { Button } from '@/components/ui/button';
 import { Copy, Users, Home, Loader2, Play, MessageSquare, Eye } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import NicknameDialog from './nickname-dialog';
+
 
 export default function GameRoom({ roomId }: { roomId: string }) {
   const router = useRouter();
   const { socket, isConnected } = useSocket();
-  const [nickname] = useLocalStorage('nickname', '');
+  const [nickname, setNickname] = useLocalStorage('nickname', '');
   const { toast } = useToast();
 
   const [room, setRoom] = useState<Room | null>(null);
@@ -29,16 +31,19 @@ export default function GameRoom({ roomId }: { roomId: string }) {
   const [finalScores, setFinalScores] = useState<Player[]>([]);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [isNicknameDialogOpen, setIsNicknameDialogOpen] = useState(false);
 
   const me = room?.players.find(p => p.id === socket?.id);
   const isDrawer = me?.id === room?.gameState.currentDrawer;
   
   useEffect(() => {
-    if (!isConnected || !socket) return;
     if (!nickname) {
-      router.push('/');
-      return;
+        setIsNicknameDialogOpen(true);
     }
+  }, [nickname]);
+  
+  useEffect(() => {
+    if (!isConnected || !socket || !nickname) return;
 
     socket.emit('joinRoom', { roomId, player: { nickname } }, (response: { status: string; room?: Room; message?: string }) => {
       if (response.status !== 'ok') {
@@ -108,10 +113,19 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     toast({ title: 'Invite link copied!' });
   };
   
+  if (!nickname) {
+    return <NicknameDialog 
+                isOpen={isNicknameDialogOpen} 
+                setIsOpen={setIsNicknameDialogOpen} 
+                onConfirm={setNickname} 
+            />;
+  }
+  
   if (!room) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ml-4">Joining room...</p>
       </div>
     );
   }
