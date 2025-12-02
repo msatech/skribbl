@@ -75,7 +75,13 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     if(!socket) return;
     
     const handleRoomState = (newRoomState: Room) => {
-        setRoom(newRoomState);
+        setRoom(prevRoom => {
+            // This logic is crucial for undo to work correctly without a full canvas redraw
+            if (prevRoom && newRoomState.drawingHistory.length < prevRoom.drawingHistory.length) {
+                return { ...newRoomState, drawingHistory: newRoomState.drawingHistory };
+            }
+            return newRoomState;
+        });
         if(newRoomState.gameState.status === 'waiting') {
             setChatMessages([]);
         }
@@ -92,6 +98,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     const handleDrawingAction = (action: DrawingAction) => {
       setRoom(prevRoom => {
         if (!prevRoom) return null;
+        // The drawer handles their own drawing optimistically, so we ignore actions from the server if we are the drawer.
         if (socket.id === prevRoom.gameState.currentDrawerId) return prevRoom;
 
         let newHistory = [...prevRoom.drawingHistory];
@@ -102,10 +109,12 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
             if (action.isStartOfLine) {
                 newHistory.push(action);
             } else {
-                const lastAction = newHistory[newHistory.length - 1] as Line;
-                if (lastAction && lastAction.tool === action.tool && lastAction.color === action.color && lastAction.size === action.size) {
-                    lastAction.points.push(...action.points);
+                const lastAction = newHistory[newHistory.length - 1];
+                // Ensure the last action is a line and matches the current tool properties
+                if (lastAction && (lastAction.tool === 'pencil' || lastAction.tool === 'eraser') && lastAction.tool === action.tool && lastAction.color === action.color && lastAction.size === action.size) {
+                    (lastAction as Line).points.push(...action.points);
                 } else {
+                    // Fallback if the last action isn't what we expect
                     newHistory.push(action);
                 }
             }

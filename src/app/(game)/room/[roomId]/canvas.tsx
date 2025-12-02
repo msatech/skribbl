@@ -140,7 +140,13 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
     const drawAction: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize, isStartOfLine: false };
     
     // Create a temporary line for local rendering to include the previous point
-    const tempLineForLocalRender = { ...drawAction, points: [{x,y}] };
+    const tempLineForLocalRender: Line = { 
+        tool: currentTool, 
+        points: [{x, y}], 
+        color: color,
+        size: brushSize,
+        isStartOfLine: false
+    };
 
     // Optimistic update for the drawer
     applyAction(ctx, tempLineForLocalRender);
@@ -167,13 +173,20 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    if (line.isStartOfLine || line.points.length === 1) {
-        ctx.beginPath();
-        // For a single point (like from startDrawing), we draw a tiny circle
-        ctx.moveTo(line.points[0].x - 0.01, line.points[0].y);
+    ctx.beginPath();
+    
+    if (line.points.length === 1) {
+        // For a single point (like from startDrawing or a simple click), we draw a tiny circle
+        ctx.moveTo(line.points[0].x, line.points[0].y);
+        ctx.lineTo(line.points[0].x, line.points[0].y);
+    } else {
+        // For a multi-point line
+        ctx.moveTo(line.points[0].x, line.points[0].y);
+        for (let i = 1; i < line.points.length; i++) {
+            ctx.lineTo(line.points[i].x, line.points[i].y);
+        }
     }
-
-    ctx.lineTo(line.points[0].x, line.points[0].y);
+    
     ctx.stroke();
   };
 
