@@ -34,17 +34,20 @@ app.prepare().then(() => {
     },
   });
 
+  const getPublicRooms = () => {
+    return Object.values(rooms)
+      .filter(room => !room.isPrivate && room.players.length < room.settings.maxPlayers)
+      .map(room => ({
+        id: room.id,
+        name: room.name,
+        playerCount: room.players.length,
+        maxPlayers: room.settings.maxPlayers,
+      }));
+  };
+
   io.on('connection', (socket) => {
     socket.on('getPublicRooms', (callback) => {
-      const publicRooms = Object.values(rooms)
-        .filter(room => !room.isPrivate && room.players.length < room.settings.maxPlayers)
-        .map(room => ({
-          id: room.id,
-          name: room.name,
-          playerCount: room.players.length,
-          maxPlayers: room.settings.maxPlayers,
-        }));
-      callback(publicRooms);
+      callback(getPublicRooms());
     });
 
     socket.on('createRoom', ({ roomName, isPrivate, settings, player }, callback) => {
@@ -68,11 +71,18 @@ app.prepare().then(() => {
       socket.join(roomId);
       callback({ status: 'ok', roomId });
       io.to(roomId).emit('roomState', rooms[roomId]);
+      if (!isPrivate) {
+        io.emit('publicRoomsUpdate', getPublicRooms());
+      }
     });
 
     socket.on('joinRoom', ({ roomId, player }, callback) => {
       if (!rooms[roomId]) {
         return callback({ status: 'error', message: 'Room not found' });
+      }
+      if (rooms[roomId].players.some(p => p.id === socket.id)) {
+        // Player is already in the room, just send them the state
+        return callback({ status: 'ok', room: rooms[roomId] });
       }
       if (rooms[roomId].players.length >= rooms[roomId].settings.maxPlayers) {
         return callback({ status: 'error', message: 'Room is full' });
@@ -85,6 +95,9 @@ app.prepare().then(() => {
 
       callback({ status: 'ok', room: rooms[roomId] });
       io.to(roomId).emit('roomState', rooms[roomId]);
+      if (!rooms[roomId].isPrivate) {
+        io.emit('publicRoomsUpdate', getPublicRooms());
+      }
     });
 
     const startGame = (roomId) => {
@@ -102,10 +115,18 @@ app.prepare().then(() => {
       const room = rooms[roomId];
       if (!room || room.gameState.status !== 'playing') return;
 
-      const currentDrawerIndex = (room.gameState.currentRound - 1) % room.players.length;
-      const drawer = room.players[currentDrawerIndex];
+      // Ensure round number doesn't exceed player count in a way that repeats drawers unnecessarily
+      const drawerIndex = (room.gameState.currentRound - 1) % room.players.length;
+      const drawer = room.players[drawerIndex];
+
+      if (!drawer) { // handle case where drawer might not exist
+        endGame(roomId);
+        return;
+      }
+
       room.gameState.currentDrawer = drawer.id;
       room.drawingData = [];
+      io.to(roomId).emit('clearCanvas');
 
       const wordChoices = getShuffledWords(3);
       io.to(drawer.id).emit('chooseWord', wordChoices);
@@ -116,6 +137,10 @@ app.prepare().then(() => {
 
       if (room.timerInterval) clearInterval(room.timerInterval);
       room.timerInterval = setInterval(() => {
+        if (!rooms[roomId]) {
+            clearInterval(room.timerInterval);
+            return;
+        }
         room.gameState.timer -= 1;
         io.to(roomId).emit('timerUpdate', room.gameState.timer);
         if (room.gameState.timer <= 0) {
@@ -135,7 +160,8 @@ app.prepare().then(() => {
       io.to(roomId).emit('roundEnd');
 
       setTimeout(() => {
-        if (room.gameState.currentRound >= room.settings.rounds) {
+        if (!rooms[roomId]) return; // Room might be deleted
+        if ((room.gameState.currentRound * room.players.length) >= (room.settings.rounds * room.players.length)) {
           endGame(roomId);
         } else {
           room.gameState.currentRound += 1;
@@ -170,7 +196,7 @@ app.prepare().then(() => {
       const player = room.players.find(p => p.id === socket.id);
       if (!player) return;
 
-      if (room.gameState.status === 'playing' && socket.id !== room.gameState.currentDrawer && !room.guessedPlayers.has(socket.id) && message.toLowerCase() === room.gameState.currentWord.toLowerCase()) {
+      if (room.gameState.status === 'playing' && socket.id !== room.gameState.currentDrawer && room.gameState.currentWord && !room.guessedPlayers?.has(socket.id) && message.toLowerCase() === room.gameState.currentWord.toLowerCase()) {
         const points = 500 - (room.guessedPlayers.size * 50) + (room.gameState.timer * 2);
         player.score += points;
         
@@ -194,7 +220,8 @@ app.prepare().then(() => {
     socket.on('drawing', ({ roomId, data }) => {
       const room = rooms[roomId];
       if (!room) return;
-      room.drawingData.push(data);
+      // We don't need to store all drawing data on the server
+      // room.drawingData.push(data);
       socket.to(roomId).emit('drawing', data);
     });
     
@@ -203,6 +230,10 @@ app.prepare().then(() => {
       if (!room) return;
       room.drawingData = [];
       io.to(roomId).emit('clearCanvas');
+    });
+
+    socket.on('undo', ({ roomId }) => {
+        io.to(roomId).emit('undo');
     });
 
     socket.on('disconnect', () => {
@@ -214,9 +245,10 @@ app.prepare().then(() => {
           io.to(roomId).emit('systemMessage', { content: `${removedPlayer.nickname} has left.` });
 
           if (room.players.length === 0) {
+            if (room.timerInterval) clearInterval(room.timerInterval);
             delete rooms[roomId];
           } else {
-            if (removedPlayer.isHost) {
+            if (removedPlayer.isHost && room.players.length > 0) {
               room.players[0].isHost = true;
             }
              if (room.gameState.status === 'playing' && room.gameState.currentDrawer === socket.id) {
@@ -225,8 +257,12 @@ app.prepare().then(() => {
              if(room.gameState.status === 'playing' && room.players.length < 2) {
                 endGame(roomId);
              }
+             io.to(roomId).emit('roomState', room);
           }
-          io.to(roomId).emit('roomState', rooms[roomId]);
+          
+          if (!room.isPrivate) {
+            io.emit('publicRoomsUpdate', getPublicRooms());
+          }
           break;
         }
       }

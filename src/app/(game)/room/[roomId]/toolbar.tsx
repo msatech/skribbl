@@ -1,9 +1,10 @@
 'use client';
 
-import { Brush, Circle, Trash2, Eraser } from 'lucide-react';
+import { Brush, Circle, Trash2, Eraser, Undo, PaintBucket, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Slider } from '@/components/ui/slider';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 type ToolbarProps = {
   brushColor: string;
@@ -11,6 +12,9 @@ type ToolbarProps = {
   brushSize: number;
   setBrushSize: (size: number) => void;
   onClear: () => void;
+  currentTool: string;
+  setCurrentTool: (tool: string) => void;
+  onUndo: () => void;
 };
 
 const colors = [
@@ -19,9 +23,24 @@ const colors = [
   '#8B5CF6', '#EC4899'
 ];
 
-export default function Toolbar({ brushColor, setBrushColor, brushSize, setBrushSize, onClear }: ToolbarProps) {
+export default function Toolbar({ 
+    brushColor, setBrushColor, brushSize, setBrushSize, onClear,
+    currentTool, setCurrentTool, onUndo
+}: ToolbarProps) {
   return (
     <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-card/80 backdrop-blur-sm border rounded-lg p-2 flex items-center gap-2 shadow-lg">
+      <ToggleGroup type="single" value={currentTool} onValueChange={(value) => value && setCurrentTool(value)} className="gap-1">
+        <ToggleGroupItem value="pencil" aria-label="Pencil">
+          <Pencil className="h-5 w-5"/>
+        </ToggleGroupItem>
+        <ToggleGroupItem value="eraser" aria-label="Eraser">
+          <Eraser className="h-5 w-5" />
+        </ToggleGroupItem>
+        <ToggleGroupItem value="fill" aria-label="Fill">
+          <PaintBucket className="h-5 w-5" />
+        </ToggleGroupItem>
+      </ToggleGroup>
+      
       <Popover>
         <PopoverTrigger asChild>
           <Button variant="outline" size="icon" title="Brush color">
@@ -44,7 +63,7 @@ export default function Toolbar({ brushColor, setBrushColor, brushSize, setBrush
       
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="icon" title="Brush size">
+          <Button variant="outline" size="icon" title="Brush size" disabled={currentTool === 'fill'}>
             <Brush className="h-5 w-5" />
           </Button>
         </PopoverTrigger>
@@ -59,9 +78,9 @@ export default function Toolbar({ brushColor, setBrushColor, brushSize, setBrush
         </PopoverContent>
       </Popover>
 
-       <Button variant="outline" size="icon" onClick={() => setBrushColor('#FFFFFF')} title="Eraser">
-          <Eraser className="h-5 w-5" />
-        </Button>
+      <Button variant="outline" size="icon" onClick={onUndo} title="Undo">
+        <Undo className="h-5 w-5" />
+      </Button>
 
       <Button variant="destructive" size="icon" onClick={onClear} title="Clear canvas">
         <Trash2 className="h-5 w-5" />
