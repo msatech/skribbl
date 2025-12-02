@@ -272,6 +272,7 @@ app.prepare().then(() => {
       if (room.gameState.status === 'playing' && socket.id !== room.gameState.currentDrawer && room.gameState.currentWord) {
         if (message.toLowerCase() === room.gameState.currentWord.toLowerCase()) {
           if (!room.gameState.guessedPlayers.includes(socket.id)) {
+            
             const timeBonus = Math.floor(room.gameState.timer * 1.5);
             const orderBonus = Math.max(0, (room.players.length - room.gameState.guessedPlayers.length - 2) * 50);
             const points = 100 + timeBonus + orderBonus;
@@ -287,7 +288,7 @@ app.prepare().then(() => {
 
             // Check if all guessers have guessed
             const guessers = room.players.filter(p => p.id !== room.gameState.currentDrawer);
-            if (room.gameState.guessedPlayers.length >= guessers.length) {
+            if (room.gameState.guessedPlayers.length >= guessers.length && guessers.length > 0) {
               endRound(roomId, 'all_guessed');
             }
           }
@@ -365,3 +366,5 @@ app.prepare().then(() => {
       process.exit(1);
     });
 });
+
+    

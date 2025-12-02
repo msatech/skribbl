@@ -1,3 +1,4 @@
+
 const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
@@ -89,6 +90,7 @@ app.prepare().then(() => {
           currentWord: '',
           timer: 0,
           hintsUsed: 0,
+          guessedPlayers: [],
         },
         drawingData: [],
       };
@@ -154,6 +156,7 @@ app.prepare().then(() => {
       }
 
       room.gameState.currentDrawer = drawer.id;
+      room.gameState.guessedPlayers = [];
       room.drawingData = [];
       io.to(roomId).emit('clearCanvas');
 
@@ -162,7 +165,6 @@ app.prepare().then(() => {
 
       room.gameState.timer = room.settings.drawTime;
       room.gameState.hintsUsed = 0;
-      room.guessedPlayers = new Set();
       io.to(roomId).emit('roomState', room);
       io.to(roomId).emit('systemMessage', { content: `${drawer.nickname} is drawing!` });
 
@@ -257,7 +259,7 @@ app.prepare().then(() => {
       const room = rooms[roomId];
       if (!room || socket.id !== room.gameState.currentDrawer) return;
       room.gameState.currentWord = word;
-      room.guessedPlayers = new Set();
+      room.gameState.guessedPlayers = [];
       io.to(roomId).emit('wordUpdate', { word: getWordMask(word, roomId) });
       io.to(socket.id).emit('wordUpdate', { word: word, forDrawer: true });
     });
@@ -268,28 +270,36 @@ app.prepare().then(() => {
       const player = room.players.find(p => p.id === socket.id);
       if (!player) return;
 
-      if (room.gameState.status === 'playing' && socket.id !== room.gameState.currentDrawer && room.gameState.currentWord && !room.guessedPlayers?.has(socket.id) && message.toLowerCase() === room.gameState.currentWord.toLowerCase()) {
-        
-        const timeBonus = Math.floor(room.gameState.timer * 1.5);
-        const orderBonus = Math.max(0, (room.players.length - room.guessedPlayers.size - 2) * 50);
-        const points = 100 + timeBonus + orderBonus;
-        player.score += points;
-        
-        const drawer = room.players.find(p => p.id === room.gameState.currentDrawer);
-        if(drawer) drawer.score += 50;
+      if (room.gameState.status === 'playing' && socket.id !== room.gameState.currentDrawer && room.gameState.currentWord) {
+        if (message.toLowerCase() === room.gameState.currentWord.toLowerCase()) {
+          if (!room.gameState.guessedPlayers.includes(socket.id)) {
+            
+            const timeBonus = Math.floor(room.gameState.timer * 1.5);
+            const orderBonus = Math.max(0, (room.players.length - room.gameState.guessedPlayers.length - 2) * 50);
+            const points = 100 + timeBonus + orderBonus;
+            player.score += points;
+            
+            const drawer = room.players.find(p => p.id === room.gameState.currentDrawer);
+            if(drawer) drawer.score += 50;
 
-        room.guessedPlayers.add(socket.id);
-        
-        io.to(roomId).emit('systemMessage', { content: `${player.nickname} guessed the word!` });
-        io.to(roomId).emit('roomState', room);
+            room.gameState.guessedPlayers.push(socket.id);
+            
+            io.to(roomId).emit('systemMessage', { content: `${player.nickname} guessed the word!` });
+            io.to(roomId).emit('roomState', room);
 
-        if (room.guessedPlayers.size >= room.players.length - 1) {
-          endRound(roomId, 'all_guessed');
+            // Check if all guessers have guessed
+            const guessers = room.players.filter(p => p.id !== room.gameState.currentDrawer);
+            if (room.gameState.guessedPlayers.length >= guessers.length && guessers.length > 0) {
+              endRound(roomId, 'all_guessed');
+            }
+          }
+          // Do not broadcast the message if it's the correct word
+          return;
         }
-
-      } else {
-        io.to(roomId).emit('newMessage', { player, message });
       }
+      
+      // Broadcast message to everyone if it's not the correct word or if game not in play
+      io.to(roomId).emit('newMessage', { player, message });
     });
 
     socket.on('drawing', ({ roomId, data }) => {
@@ -357,3 +367,5 @@ app.prepare().then(() => {
       process.exit(1);
     });
 });
+
+    
