@@ -1,8 +1,7 @@
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useGame } from '@/contexts/game-context';
+import { useSocket } from '@/contexts/socket-context';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -12,15 +11,12 @@ import { cn } from '@/lib/utils';
 import type { Player, ChatMessage } from '@/types';
 
 type ChatProps = {
-  players: Player[];
-  me: Player | undefined;
   isDrawer: boolean;
-  onSendMessage: (guess: string) => void;
 };
 
-export default function Chat({ players, me, isDrawer, onSendMessage }: ChatProps) {
+export default function Chat({ isDrawer }: ChatProps) {
   const [newMessage, setNewMessage] = useState('');
-  const { chatMessages } = useGame();
+  const { chatMessages, socket, roomId } = useSocket();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   
   useEffect(() => {
@@ -32,8 +28,8 @@ export default function Chat({ players, me, isDrawer, onSendMessage }: ChatProps
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newMessage.trim() && !isDrawer) {
-      onSendMessage(newMessage);
+    if (newMessage.trim() && !isDrawer && socket && roomId) {
+      socket.emit('submitGuess', { roomId, guess: newMessage });
       setNewMessage('');
     }
   };

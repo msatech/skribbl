@@ -1,12 +1,10 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { Sparkles, Users, Plus, LogIn, Loader2 } from 'lucide-react';
+import { Sparkles, Plus, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -29,7 +27,7 @@ import { useToast } from '@/hooks/use-toast';
 import { getSuggestedNickname } from '@/lib/actions';
 import useLocalStorage from '@/hooks/use-local-storage';
 import CreateRoomDialog from './create-room-dialog';
-import { useGame } from '@/contexts/game-context';
+import { useSocket } from '@/contexts/socket-context';
 
 const FormSchema = z.object({
   nickname: z.string().min(2, {
@@ -40,14 +38,12 @@ const FormSchema = z.object({
 });
 
 export default function HomePage() {
-  const router = useRouter();
   const { toast } = useToast();
+  const { isConnected } = useSocket();
   const [storedNickname, setStoredNickname] = useLocalStorage('nickname', '');
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
-
-  const { setNickname, addPlayer, setHost } = useGame();
 
   useEffect(() => {
     setIsClient(true);
@@ -85,9 +81,6 @@ export default function HomePage() {
   
   const onSubmit = (data: z.infer<typeof FormSchema>) => {
     setStoredNickname(data.nickname);
-    setNickname(data.nickname); 
-    addPlayer(data.nickname); 
-    setHost();
     setIsDialogOpen(true);
   }
   
@@ -127,8 +120,8 @@ export default function HomePage() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full">
-                <Plus className="mr-2 h-4 w-4" /> Create Game Room
+              <Button type="submit" className="w-full" disabled={!isConnected}>
+                { isConnected ? <><Plus className="mr-2 h-4 w-4" /> Create Game Room</> : <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Connecting...</>}
               </Button>
             </form>
           </Form>

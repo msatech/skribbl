@@ -1,7 +1,8 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import Toolbar from './toolbar';
+import { useSocket } from '@/contexts/socket-context';
 
 type DrawingPoint = { x: number; y: number };
 export type Line = {
@@ -16,40 +17,46 @@ type Fill = {
   y: number;
   color: string;
 }
-export type DrawingAction = Line | Fill;
+export type DrawingAction = Line | Fill | { tool: 'clear' } | { tool: 'undo' };
 
 type CanvasProps = {
   isDrawer: boolean;
   drawingHistory: DrawingAction[];
-  setDrawingHistory: (history: DrawingAction[] | ((prev: DrawingAction[]) => DrawingAction[])) => void;
-  onUndo: () => void;
-  onClear: () => void;
 };
 
-
-export default function Canvas({ isDrawer, drawingHistory, setDrawingHistory, onUndo, onClear }: CanvasProps) {
+export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
+  const { socket, roomId } = useSocket();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushColor, setBrushColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(5);
   const [currentTool, setCurrentTool] = useState<'pencil' | 'eraser' | 'fill'>('pencil');
   
-  const getContext = () => canvasRef.current?.getContext('2d', { willReadFrequently: true });
+  const getContext = useCallback(() => canvasRef.current?.getContext('2d', { willReadFrequently: true }), []);
   
-  const redrawCanvas = (history: DrawingAction[]) => {
+  const redrawCanvas = useCallback((history: DrawingAction[]) => {
     const canvas = canvasRef.current;
     const ctx = getContext();
     if (canvas && ctx) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       history.forEach(action => {
-        if (action.tool === 'pencil' || action.tool === 'eraser') {
-          drawSingleLine(ctx, action);
-        } else if (action.tool === 'fill') {
-          performFloodFill(ctx, action.x, action.y, hexToRgb(action.color));
-        }
+        applyAction(ctx, action);
       });
     }
-  };
+  }, [getContext]);
+
+  const applyAction = useCallback((ctx: CanvasRenderingContext2D, action: DrawingAction) => {
+    if (action.tool === 'pencil' || action.tool === 'eraser') {
+      drawSingleLine(ctx, action);
+    } else if (action.tool === 'fill') {
+      performFloodFill(ctx, action.x, action.y, hexToRgb(action.color));
+    } else if (action.tool === 'clear') {
+      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    } else if (action.tool === 'undo') {
+      // The server will send the new history, so we just redraw.
+      // This case is handled by the drawingHistory prop update.
+    }
+  }, []);
   
   // Effect to handle canvas resizing and initial draw
   useEffect(() => {
@@ -70,12 +77,12 @@ export default function Canvas({ isDrawer, drawingHistory, setDrawingHistory, on
     return () => {
       window.removeEventListener('resize', resizeCanvas);
     };
-  }, []);
+  }, [drawingHistory, redrawCanvas]);
 
-  // Effect to redraw canvas when history changes from external source (like undo)
+  // Effect to redraw canvas when history changes from server
   useEffect(() => {
     redrawCanvas(drawingHistory);
-  }, [drawingHistory]);
+  }, [drawingHistory, redrawCanvas]);
   
   const getCoords = (e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current;
@@ -96,8 +103,7 @@ export default function Canvas({ isDrawer, drawingHistory, setDrawingHistory, on
       setIsDrawing(true);
       const color = currentTool === 'eraser' ? '#FFFFFF' : brushColor;
       const newLine: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize };
-      // We only update the history locally for now. The final line is sent on stopDrawing.
-      setDrawingHistory(prev => [...prev, newLine]); 
+      socket?.emit('drawingAction', { roomId, action: newLine });
     }
     else if (currentTool === 'fill') {
        handleFill(x, y);
@@ -105,47 +111,36 @@ export default function Canvas({ isDrawer, drawingHistory, setDrawingHistory, on
   };
   
   const handleFill = (x: number, y: number) => {
-    const ctx = getContext();
-    if(!ctx) return;
-    
     const color = brushColor;
     const fillAction: Fill = { tool: 'fill', x, y, color };
-    
-    performFloodFill(ctx, x, y, hexToRgb(color));
-    setDrawingHistory(prev => [...prev, fillAction]);
+    socket?.emit('drawingAction', { roomId, action: fillAction });
   }
   
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing || !isDrawer) return;
-    const ctx = getContext();
-    if (!ctx) return;
-
+    
     const { x, y } = getCoords(e);
     
-    setDrawingHistory(prev => {
-        const newHistory = [...prev];
-        const currentLine = newHistory[newHistory.length - 1];
-        if (currentLine && (currentLine.tool === 'pencil' || currentLine.tool === 'eraser')) {
-            currentLine.points.push({ x, y });
-            drawSingleLine(ctx, currentLine as Line);
-        }
-        return newHistory;
-    });
+    const color = currentTool === 'eraser' ? '#FFFFFF' : brushColor;
+    const drawAction: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize };
+    
+    socket?.emit('drawingAction', { roomId, action: drawAction });
   };
 
   const stopDrawing = () => {
     if (!isDrawing || !isDrawer) return;
     setIsDrawing(false);
+    // Send a "line break" if needed by server logic
   };
 
   const drawSingleLine = (ctx: CanvasRenderingContext2D, line: Line) => {
-    if (line.points.length < 2) return;
+    if (line.points.length === 0) return;
     ctx.beginPath();
     ctx.moveTo(line.points[0].x, line.points[0].y);
     for (let i = 1; i < line.points.length; i++) {
       ctx.lineTo(line.points[i].x, line.points[i].y);
     }
-    ctx.strokeStyle = line.color;
+    ctx.strokeStyle = line.tool === 'eraser' ? '#FFFFFF' : line.color;
     ctx.lineWidth = line.size;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -215,7 +210,6 @@ export default function Canvas({ isDrawer, drawingHistory, setDrawingHistory, on
   };
   
   const matchStartColor = (pixelPos: number, color: {r:number, g:number, b:number, a:number}, data: Uint8ClampedArray) => {
-    // Tolerance for color matching
     const tolerance = 10;
     return (
       Math.abs(data[pixelPos] - color.r) <= tolerance &&
@@ -231,6 +225,14 @@ export default function Canvas({ isDrawer, drawingHistory, setDrawingHistory, on
     data[pixelPos + 2] = color.b;
     data[pixelPos + 3] = 255;
   };
+  
+  const handleClear = () => {
+      socket?.emit('drawingAction', { roomId, action: { tool: 'clear' } });
+  }
+
+  const handleUndo = () => {
+      socket?.emit('drawingAction', { roomId, action: { tool: 'undo' } });
+  }
 
   return (
     <div className={`w-full h-full relative touch-none ${isDrawer ? `cursor-crosshair` : 'cursor-not-allowed'}`}>
@@ -252,10 +254,10 @@ export default function Canvas({ isDrawer, drawingHistory, setDrawingHistory, on
             setBrushColor={setBrushColor}
             brushSize={brushSize}
             setBrushSize={setBrushSize}
-            onClear={onClear}
+            onClear={handleClear}
             currentTool={currentTool}
             setCurrentTool={setCurrentTool}
-            onUndo={onUndo}
+            onUndo={handleUndo}
             canUndo={drawingHistory.length > 0}
         />
       )}

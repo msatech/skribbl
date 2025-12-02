@@ -48,12 +48,10 @@ export default function WordChoiceModal({ isOpen, words, onSelectWord, time }: W
   useEffect(() => {
     if (timeLeft <= 0 && isOpen && !chosenRef.current) {
       if (words.length > 0) {
-        onSelectWord(words[Math.floor(Math.random() * words.length)]);
-        chosenRef.current = true;
+        handleSelect(words[Math.floor(Math.random() * words.length)]);
       }
-      if (timerRef.current) clearInterval(timerRef.current);
     }
-  }, [timeLeft, isOpen, onSelectWord, words]);
+  }, [timeLeft, isOpen, words]);
 
 
   const handleSelect = (word: string) => {

@@ -36,6 +36,8 @@ export type GameState = {
   currentDrawerId: string | null;
   timer: number;
   guessedPlayerIds: string[];
+  word: string;
+  turn: number;
 };
 
 export type Room = {
@@ -43,6 +45,9 @@ export type Room = {
   name: string;
   isPrivate: boolean;
   settings: GameSettings;
+  players: Player[];
+  gameState: GameState;
+  drawingHistory: DrawingAction[];
 };
 
 export type PublicRoom = {

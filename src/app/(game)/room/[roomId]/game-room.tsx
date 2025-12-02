@@ -1,10 +1,8 @@
-
 'use client';
 
-import { useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
-import { useGame } from '@/contexts/game-context';
-import type { Player } from '@/types';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useParams } from 'next/navigation';
+import { useSocket } from '@/contexts/socket-context';
 import Canvas from './canvas';
 import Chat from './chat';
 import PlayerList from './player-list';
@@ -15,49 +13,88 @@ import { Copy, Users, Home, Loader2, Play, MessageSquare } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import NicknameDialog from './nickname-dialog';
 import { useToast } from '@/hooks/use-toast';
+import useLocalStorage from '@/hooks/use-local-storage';
 
 export default function GameRoom() {
   const router = useRouter();
+  const params = useParams();
   const { toast } = useToast();
-  const {
-    room,
-    players,
-    gameState,
-    me,
-    isDrawer,
-    wordToDraw,
-    wordDisplay,
-    wordChoices,
-    finalScores,
-    isLeaderboardOpen,
-    startGame,
-    selectWord,
-    submitGuess,
-    drawingHistory,
-    setDrawingHistory,
-    clearCanvas,
-    undoLastDraw,
-    resetGame,
-    isNicknameSet,
-    setNickname,
-  } = useGame();
+  const { socket, room, me, isConnected, setRoomId, chatMessages, finalScores, setFinalScores } = useSocket();
+  const [nickname, setNickname] = useLocalStorage('nickname', '');
+  const [isNicknameModalOpen, setIsNicknameModalOpen] = useState(false);
+  const [wordChoices, setWordChoices] = useState<string[]>([]);
+  const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
+  
+  const currentRoomId = params.roomId as string;
+  
+  useEffect(() => {
+    if (currentRoomId) {
+        setRoomId(currentRoomId);
+    }
+    
+    if (isConnected && !nickname) {
+        setIsNicknameModalOpen(true);
+    } else if (isConnected && nickname && currentRoomId && !me) {
+        socket?.emit('joinRoom', { roomId: currentRoomId, nickname });
+    }
+  }, [isConnected, nickname, currentRoomId, setRoomId, me, socket]);
 
   useEffect(() => {
-    if (!isNicknameSet) {
-      router.push('/');
+    if (!socket) return;
+    
+    const handleChooseWord = (words: string[]) => {
+      setWordChoices(words);
+    };
+
+    const handleFinalScores = (scores) => {
+        setFinalScores(scores);
+        setIsLeaderboardOpen(true);
+    };
+    
+    const handleJoinedRoom = () => {
+        // Successfully joined, can close nickname modal if it was open for re-joining
+        setIsNicknameModalOpen(false);
     }
-  }, [isNicknameSet, router]);
+
+    socket.on('chooseWord', handleChooseWord);
+    socket.on('finalScores', handleFinalScores);
+    socket.on('joinedRoom', handleJoinedRoom);
+
+    return () => {
+      socket.off('chooseWord', handleChooseWord);
+      socket.off('finalScores', handleFinalScores);
+      socket.off('joinedRoom', handleJoinedRoom);
+    };
+  }, [socket, setFinalScores]);
+
+  useEffect(() => {
+    if (room?.gameState.status === 'ended') {
+      setIsLeaderboardOpen(true);
+    } else {
+      setIsLeaderboardOpen(false);
+    }
+  }, [room?.gameState.status]);
 
   const handleStartGame = () => {
-    startGame();
+    socket?.emit('startGame', room?.id);
   };
 
   const handleWordSelect = (selectedWord: string) => {
-    selectWord(selectedWord);
+    socket?.emit('wordChosen', { roomId: room?.id, word: selectedWord });
+    setWordChoices([]);
   };
   
   const handlePlayAgain = () => {
-    resetGame();
+    socket?.emit('resetGame', room?.id);
+    setIsLeaderboardOpen(false);
+  }
+  
+  const handleConfirmNickname = (name: string) => {
+    setNickname(name);
+    setIsNicknameModalOpen(false);
+    if(currentRoomId) {
+        socket?.emit('joinRoom', { roomId: currentRoomId, nickname: name });
+    }
   }
 
   const copyInviteLink = () => {
@@ -65,17 +102,56 @@ export default function GameRoom() {
     toast({ title: 'Invite link copied!' });
   };
   
-  if (!room || !gameState || !me) {
+  if (!isConnected || !room || !me) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-4">Loading game...</p>
-      </div>
+        <>
+         <NicknameDialog 
+            isOpen={isNicknameModalOpen}
+            onConfirm={handleConfirmNickname}
+        />
+        <div className="flex h-screen items-center justify-center">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="ml-4">{isConnected ? 'Joining room...' : 'Connecting to game...'}</p>
+        </div>
+      </>
     );
   }
   
-  const { settings } = room;
+  const { gameState, players, settings, drawingHistory } = room;
+  const isDrawer = me?.id === gameState.currentDrawerId;
   const currentDrawer = players.find(p => p.id === gameState.currentDrawerId);
+
+  const wordDisplay = useMemo(() => {
+    if (!gameState.word) return '';
+    if (isDrawer || gameState.status === 'ended_round' || gameState.status === 'ended') return gameState.word;
+    
+    const revealedLetters = new Set<number>();
+    gameState.word.split('').forEach((char, index) => {
+        if (char === ' ') revealedLetters.add(index);
+    });
+
+    if (settings.hints > 0 && gameState.timer > 0) {
+        const timePerHint = Math.floor(settings.drawTime / (settings.hints + 1));
+        const hintsToShow = Math.floor((settings.drawTime - gameState.timer) / timePerHint);
+
+        if (hintsToShow > 0) {
+            const wordWithoutSpaces = gameState.word.replace(/ /g, '');
+            const lettersToRevealCount = Math.floor(wordWithoutSpaces.length * (0.2 * hintsToShow));
+            const availableIndices = gameState.word.split('').map((_, i) => i).filter(i => gameState.word[i] !== ' ');
+            
+            while(revealedLetters.size < lettersToRevealCount + (gameState.word.split(' ').length - 1) && revealedLetters.size < gameState.word.length) {
+                const randomIndex = availableIndices[Math.floor(Math.random() * availableIndices.length)];
+                if(!revealedLetters.has(randomIndex)) {
+                    revealedLetters.add(randomIndex);
+                }
+            }
+        }
+    }
+
+    return gameState.word.split('').map((char, index) => {
+        return revealedLetters.has(index) ? char : '_';
+    }).join('');
+  }, [gameState.word, isDrawer, gameState.status, gameState.timer, settings.drawTime, settings.hints]);
 
   return (
     <div className="flex h-screen flex-col p-2 sm:p-4 gap-4">
@@ -94,7 +170,7 @@ export default function GameRoom() {
         
         <main className="lg:col-span-2 order-1 lg:order-2 bg-card rounded-lg border flex flex-col min-h-0">
             <div className="flex-shrink-0 flex justify-around items-center p-2 text-center border-b">
-                <div><span className="text-xs sm:text-sm text-muted-foreground">Round</span><br/><span className="font-bold text-sm sm:text-base">{Math.min(gameState.currentRound, settings.rounds)} / {settings.rounds}</span></div>
+                <div><span className="text-xs sm:text-sm text-muted-foreground">Round</span><br/><span className="font-bold text-sm sm:text-base">{Math.min(gameState.currentRound + 1, settings.rounds)} / {settings.rounds}</span></div>
                 <div className="text-base sm:text-lg font-bold tracking-widest text-center flex-1 px-2">
                     {wordDisplay.split('').join(' ')}
                 </div>
@@ -123,21 +199,18 @@ export default function GameRoom() {
                   {gameState.status === 'ended_round' && (
                     <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center z-10 rounded-b-lg">
                         <p className="text-xl sm:text-2xl text-white mb-2">Round Over!</p>
-                        <p className="text-white mb-4">The word was: <span className="font-bold">{wordToDraw}</span></p>
+                        <p className="text-white mb-4">The word was: <span className="font-bold">{gameState.word}</span></p>
                     </div>
                  )}
                 <Canvas 
                     isDrawer={!!isDrawer}
                     drawingHistory={drawingHistory}
-                    setDrawingHistory={setDrawingHistory}
-                    onUndo={undoLastDraw}
-                    onClear={clearCanvas}
                 />
             </div>
         </main>
         
         <aside className="hidden lg:flex lg:col-span-1 order-3 flex-col min-h-0">
-          <Chat players={players} me={me} isDrawer={!!isDrawer} onSendMessage={submitGuess} />
+          <Chat isDrawer={!!isDrawer} />
         </aside>
       </div>
 
@@ -150,7 +223,7 @@ export default function GameRoom() {
             </SheetTrigger>
             <SheetContent side="bottom" className="h-[75vh] p-0 flex flex-col">
                 <PlayerList players={players} currentDrawerId={gameState.currentDrawerId} guessedPlayerIds={gameState.guessedPlayerIds} />
-                <Chat players={players} me={me} isDrawer={!!isDrawer} onSendMessage={submitGuess} />
+                <Chat isDrawer={!!isDrawer} />
             </SheetContent>
           </Sheet>
        </div>
@@ -168,6 +241,11 @@ export default function GameRoom() {
         onPlayAgain={handlePlayAgain}
         isHost={me?.isHost || false}
       />
+
+       <NicknameDialog 
+            isOpen={isNicknameModalOpen && !me}
+            onConfirm={handleConfirmNickname}
+        />
     </div>
   );
 }

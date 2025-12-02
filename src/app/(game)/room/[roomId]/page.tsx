@@ -1,8 +1,16 @@
+'use client';
+import { useParams } from 'next/navigation';
 import GameRoom from './game-room';
+import { SocketProvider } from '@/contexts/socket-context';
 
-// This page is now a client component to access hooks and context
-// The roomID from the URL isn't strictly necessary for offline mode,
-// but we keep the structure for potential future enhancements.
+
 export default function GameRoomPage() {
-  return <GameRoom />;
+  const params = useParams();
+  const roomId = params.roomId as string;
+  
+  return (
+    <SocketProvider roomId={roomId}>
+        <GameRoom />
+    </SocketProvider>
+  );
 }

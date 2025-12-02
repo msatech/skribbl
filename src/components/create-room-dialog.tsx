@@ -21,7 +21,8 @@ import { getSuggestedRoomName } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
-import { useGame } from '@/contexts/game-context';
+import { useSocket } from '@/contexts/socket-context';
+
 
 const RoomSettingsSchema = z.object({
   roomName: z.string().min(3, 'Too short').max(30, 'Too long'),
@@ -44,7 +45,7 @@ type CreateRoomDialogProps = {
 export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: CreateRoomDialogProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const { createRoom } = useGame();
+  const { socket } = useSocket();
   const [isSuggesting, setIsSuggesting] = useState(false);
 
   const form = useForm<z.infer<typeof RoomSettingsSchema>>({
@@ -61,6 +62,17 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
       hints: 2,
     },
   });
+  
+  useState(() => {
+    if (!socket) return;
+    socket.on('roomCreated', (roomId) => {
+        router.push(`/room/${roomId}`);
+    });
+
+    return () => {
+        socket.off('roomCreated');
+    }
+  }, [socket, router]);
 
   const handleSuggestRoomName = async () => {
     setIsSuggesting(true);
@@ -82,8 +94,7 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
 
   const onSubmit = (values: z.infer<typeof RoomSettingsSchema>) => {
     const { roomName, isPrivate, ...settings } = values;
-    createRoom(roomName, isPrivate, settings);
-    router.push(`/room/local`);
+    socket?.emit('createRoom', { roomName, isPrivate, settings, nickname });
   };
 
   return (
