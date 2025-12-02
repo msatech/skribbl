@@ -16,13 +16,12 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { getSuggestedRoomName } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
-import { useSocket } from '@/contexts/socket-context';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
+import { useGame } from '@/contexts/game-context';
 
 const RoomSettingsSchema = z.object({
   roomName: z.string().min(3, 'Too short').max(30, 'Too long'),
@@ -45,9 +44,8 @@ type CreateRoomDialogProps = {
 export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: CreateRoomDialogProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const { socket, isConnected } = useSocket();
+  const { createRoom } = useGame();
   const [isSuggesting, setIsSuggesting] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
 
   const form = useForm<z.infer<typeof RoomSettingsSchema>>({
     resolver: zodResolver(RoomSettingsSchema),
@@ -83,27 +81,9 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
   };
 
   const onSubmit = (values: z.infer<typeof RoomSettingsSchema>) => {
-    if (!isConnected || !socket) {
-      toast({ variant: 'destructive', title: 'Not connected to server.' });
-      return;
-    }
-    
-    setIsCreating(true);
-    const player = { nickname };
     const { roomName, isPrivate, ...settings } = values;
-
-    socket.emit('createRoom', { roomName, isPrivate, settings, player }, (response: { status: string; roomId?: string; message?: string }) => {
-      setIsCreating(false);
-      if (response.status === 'ok' && response.roomId) {
-        router.push(`/room/${response.roomId}`);
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Failed to create room',
-          description: response.message || 'An unknown error occurred.',
-        });
-      }
-    });
+    createRoom(roomName, isPrivate, settings);
+    router.push(`/room/local`);
   };
 
   return (
@@ -258,8 +238,8 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
             />
 
             <DialogFooter>
-              <Button type="submit" disabled={isCreating}>
-                {isCreating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              <Button type="submit">
+                <Plus className="mr-2 h-4 w-4" />
                 Create Game
               </Button>
             </DialogFooter>

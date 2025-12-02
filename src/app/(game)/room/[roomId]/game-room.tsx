@@ -1,12 +1,10 @@
 
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSocket } from '@/contexts/socket-context';
-import useLocalStorage from '@/hooks/use-local-storage';
-import { useToast } from '@/hooks/use-toast';
-import type { Room, Player } from '@/types';
+import { useGame } from '@/contexts/game-context';
+import type { Player } from '@/types';
 import Canvas from './canvas';
 import Chat from './chat';
 import PlayerList from './player-list';
@@ -16,153 +14,68 @@ import { Button } from '@/components/ui/button';
 import { Copy, Users, Home, Loader2, Play, MessageSquare } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import NicknameDialog from './nickname-dialog';
-import { useAudio } from '@/hooks/use-audio';
+import { useToast } from '@/hooks/use-toast';
 
-
-export default function GameRoom({ roomId }: { roomId: string }) {
+export default function GameRoom() {
   const router = useRouter();
-  const { socket, isConnected } = useSocket();
-  const [nickname, setNickname] = useLocalStorage('nickname', '');
   const { toast } = useToast();
-  const { playSound } = useAudio();
-
-  const [room, setRoom] = useState<Room | null>(null);
-  const [revealedWord, setRevealedWord] = useState('');
-  const [wordChoices, setWordChoices] = useState<string[]>([]);
-  const [finalScores, setFinalScores] = useState<Player[]>([]);
-  const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(0);
-  const [isNicknameDialogOpen, setIsNicknameDialogOpen] = useState(!nickname);
-  const [word, setWord] = useState('');
-
-  const me = useMemo(() => room?.players.find(p => p.id === socket?.id), [room, socket?.id]);
-  const isDrawer = useMemo(() => me?.id === room?.gameState.currentDrawer, [me, room]);
+  const {
+    room,
+    players,
+    gameState,
+    me,
+    isDrawer,
+    wordToDraw,
+    wordDisplay,
+    wordChoices,
+    finalScores,
+    isLeaderboardOpen,
+    startGame,
+    selectWord,
+    submitGuess,
+    drawingHistory,
+    setDrawingHistory,
+    clearCanvas,
+    undoLastDraw,
+    resetGame,
+    isNicknameSet,
+    setNickname,
+  } = useGame();
 
   useEffect(() => {
-    if (!nickname) {
-        setIsNicknameDialogOpen(true);
+    if (!isNicknameSet) {
+      router.push('/');
     }
-  }, [nickname]);
-  
-  useEffect(() => {
-    if (!isConnected || !socket || !nickname || isNicknameDialogOpen) return;
-
-    socket.emit('joinRoom', { roomId, player: { nickname } }, (response: { status: string; room?: Room; message?: string }) => {
-      if (response.status !== 'ok') {
-        toast({ variant: 'destructive', title: 'Could not join room', description: response.message });
-        router.push('/');
-      } else if (response.room) {
-        setRoom(response.room);
-        setTimeLeft(response.room.gameState.timer);
-        setWord(response.room.gameState.currentWord);
-      }
-    });
-
-    const onRoomState = (newRoom: Room) => {
-        setRoom(newRoom);
-        if(newRoom.gameState.status === 'playing') {
-            setWordChoices([]);
-        }
-    };
-    const onTimerUpdate = (time: number) => setTimeLeft(time);
-
-    const onChooseWord = (choices: string[]) => {
-      setWordChoices(choices);
-    };
-
-    const onWordUpdate = ({word: newWord}: {word: string}) => {
-        setWord(newWord);
-    }
-    
-    const onGameOver = (scores: Player[]) => {
-      setFinalScores(scores);
-      setIsLeaderboardOpen(true);
-      playSound('game_over');
-    };
-    const onRoundEnd = ({ word: finalWord }: { word: string }) => {
-        setRevealedWord(finalWord);
-        setWord(finalWord);
-        setTimeout(() => {
-            setRevealedWord('');
-            setWord('');
-        }, 5000);
-    }
-    const onPlaySound = (sound: any) => {
-      playSound(sound);
-    };
-    
-    socket.on('roomState', onRoomState);
-    socket.on('timerUpdate', onTimerUpdate);
-    socket.on('chooseWord', onChooseWord);
-    socket.on('gameOver', onGameOver);
-    socket.on('roundEnd', onRoundEnd);
-    socket.on('playSound', onPlaySound);
-    socket.on('wordUpdate', onWordUpdate);
-    
-    return () => {
-      socket.off('roomState', onRoomState);
-      socket.off('timerUpdate', onTimerUpdate);
-      socket.off('chooseWord', onChooseWord);
-      socket.off('gameOver', onGameOver);
-      socket.off('roundEnd', onRoundEnd);
-      socket.off('playSound', onPlaySound);
-      socket.off('wordUpdate', onWordUpdate);
-    };
-  }, [isConnected, socket, roomId, nickname, router, toast, playSound, isNicknameDialogOpen]);
+  }, [isNicknameSet, router]);
 
   const handleStartGame = () => {
-    socket?.emit('startGame', { roomId });
-    setIsLeaderboardOpen(false);
+    startGame();
+  };
+
+  const handleWordSelect = (selectedWord: string) => {
+    selectWord(selectedWord);
   };
   
-  const handleWordSelect = (selectedWord: string) => {
-    socket?.emit('wordChosen', { roomId, word: selectedWord });
-    setWordChoices([]);
-    setWord(selectedWord);
-  };
+  const handlePlayAgain = () => {
+    resetGame();
+  }
 
   const copyInviteLink = () => {
     navigator.clipboard.writeText(window.location.href);
     toast({ title: 'Invite link copied!' });
   };
   
-  const handleNicknameConfirm = (newNickname: string) => {
-    setNickname(newNickname);
-    setIsNicknameDialogOpen(false);
-  };
-  
-  const wordDisplay = useMemo(() => {
-    if(!room) return '...';
-
-    if (room.gameState.status === 'playing' || room.gameState.status === 'ended_round') {
-        if (isDrawer) return word;
-        if (!word) return '';
-        return word.split('').map(c => c === ' ' ? ' ' : '_').join('');
-    }
-    if(room.gameState.status === 'choosing_word') return 'Choosing word...';
-    if(room.gameState.status === 'ended_round') return `Word: ${revealedWord}`;
-    return 'Waiting...';
-  }, [room, isDrawer, word, revealedWord]);
-
-  if (isNicknameDialogOpen) {
-    return <NicknameDialog 
-                isOpen={isNicknameDialogOpen} 
-                setIsOpen={setIsNicknameDialogOpen} 
-                onConfirm={handleNicknameConfirm} 
-            />;
-  }
-  
-  if (!room) {
+  if (!room || !gameState || !me) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-4">Joining room...</p>
+        <p className="ml-4">Loading game...</p>
       </div>
     );
   }
-
-  const { gameState, players, settings } = room;
-  const currentDrawer = players.find(p => p.id === gameState.currentDrawer);
+  
+  const { settings } = room;
+  const currentDrawer = players.find(p => p.id === gameState.currentDrawerId);
 
   return (
     <div className="flex h-screen flex-col p-2 sm:p-4 gap-4">
@@ -176,7 +89,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
       
       <div className="flex-grow grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-0">
         <aside className="hidden lg:flex lg:col-span-1 order-2 lg:order-1 flex-col gap-4 min-h-0">
-          <PlayerList players={players} currentDrawerId={gameState.currentDrawer} guessedPlayerIds={gameState.guessedPlayers} />
+          <PlayerList players={players} currentDrawerId={gameState.currentDrawerId} guessedPlayerIds={gameState.guessedPlayerIds} />
         </aside>
         
         <main className="lg:col-span-2 order-1 lg:order-2 bg-card rounded-lg border flex flex-col min-h-0">
@@ -185,7 +98,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
                 <div className="text-base sm:text-lg font-bold tracking-widest text-center flex-1 px-2">
                     {wordDisplay.split('').join(' ')}
                 </div>
-                <div><span className="text-xs sm:text-sm text-muted-foreground">Time</span><br/><span className="font-bold text-sm sm:text-base">{timeLeft}</span></div>
+                <div><span className="text-xs sm:text-sm text-muted-foreground">Time</span><br/><span className="font-bold text-sm sm:text-base">{gameState.timer}</span></div>
             </div>
             
             <div className="flex-grow relative">
@@ -210,15 +123,21 @@ export default function GameRoom({ roomId }: { roomId: string }) {
                   {gameState.status === 'ended_round' && (
                     <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center z-10 rounded-b-lg">
                         <p className="text-xl sm:text-2xl text-white mb-2">Round Over!</p>
-                        <p className="text-white mb-4">The word was: <span className="font-bold">{revealedWord}</span></p>
+                        <p className="text-white mb-4">The word was: <span className="font-bold">{wordToDraw}</span></p>
                     </div>
                  )}
-                <Canvas roomId={roomId} isDrawer={!!isDrawer} />
+                <Canvas 
+                    isDrawer={!!isDrawer}
+                    drawingHistory={drawingHistory}
+                    setDrawingHistory={setDrawingHistory}
+                    onUndo={undoLastDraw}
+                    onClear={clearCanvas}
+                />
             </div>
         </main>
         
         <aside className="hidden lg:flex lg:col-span-1 order-3 flex-col min-h-0">
-          <Chat roomId={roomId} players={players} me={me} isDrawer={!!isDrawer} />
+          <Chat players={players} me={me} isDrawer={!!isDrawer} onSendMessage={submitGuess} />
         </aside>
       </div>
 
@@ -230,24 +149,23 @@ export default function GameRoom({ roomId }: { roomId: string }) {
                 </Button>
             </SheetTrigger>
             <SheetContent side="bottom" className="h-[75vh] p-0 flex flex-col">
-                <PlayerList players={players} currentDrawerId={gameState.currentDrawer} guessedPlayerIds={gameState.guessedPlayers} />
-                <Chat roomId={roomId} players={players} me={me} isDrawer={!!isDrawer} />
+                <PlayerList players={players} currentDrawerId={gameState.currentDrawerId} guessedPlayerIds={gameState.guessedPlayerIds} />
+                <Chat players={players} me={me} isDrawer={!!isDrawer} onSendMessage={submitGuess} />
             </SheetContent>
           </Sheet>
        </div>
       
       <WordChoiceModal
-        isOpen={wordChoices.length > 0 && !!isDrawer}
+        isOpen={gameState.status === 'choosing_word' && !!isDrawer}
         words={wordChoices}
         onSelectWord={handleWordSelect}
-        time={4}
+        time={5}
       />
       
       <LeaderboardDialog
         isOpen={isLeaderboardOpen}
-        onOpenChange={setIsLeaderboardOpen}
         scores={finalScores}
-        onPlayAgain={handleStartGame}
+        onPlayAgain={handlePlayAgain}
         isHost={me?.isHost || false}
       />
     </div>

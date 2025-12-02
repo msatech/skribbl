@@ -29,8 +29,7 @@ import { useToast } from '@/hooks/use-toast';
 import { getSuggestedNickname } from '@/lib/actions';
 import useLocalStorage from '@/hooks/use-local-storage';
 import CreateRoomDialog from './create-room-dialog';
-import { useSocket } from '@/contexts/socket-context';
-import type { PublicRoom } from '@/types';
+import { useGame } from '@/contexts/game-context';
 
 const FormSchema = z.object({
   nickname: z.string().min(2, {
@@ -43,12 +42,12 @@ const FormSchema = z.object({
 export default function HomePage() {
   const router = useRouter();
   const { toast } = useToast();
-  const [nickname, setNickname] = useLocalStorage('nickname', '');
+  const [storedNickname, setStoredNickname] = useLocalStorage('nickname', '');
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const { socket, isConnected } = useSocket();
-  const [publicRooms, setPublicRooms] = useState<PublicRoom[]>([]);
   const [isClient, setIsClient] = useState(false);
+
+  const { setNickname, addPlayer, setHost } = useGame();
 
   useEffect(() => {
     setIsClient(true);
@@ -60,26 +59,10 @@ export default function HomePage() {
   });
 
   useEffect(() => {
-    if (nickname && isClient) {
-      form.setValue('nickname', nickname);
+    if (storedNickname && isClient) {
+      form.setValue('nickname', storedNickname);
     }
-  }, [nickname, form, isClient]);
-  
-  useEffect(() => {
-    if (!socket || !isConnected) return;
-    
-    socket.emit('getPublicRooms', (rooms: PublicRoom[]) => {
-      setPublicRooms(rooms);
-    });
-
-    const roomListUpdate = (rooms: PublicRoom[]) => setPublicRooms(rooms);
-    socket.on('publicRoomsUpdate', roomListUpdate);
-
-    return () => {
-      socket.off('publicRoomsUpdate', roomListUpdate);
-    }
-
-  }, [socket, isConnected]);
+  }, [storedNickname, form, isClient]);
 
   const handleSuggestNickname = async () => {
     setIsSuggesting(true);
@@ -87,7 +70,7 @@ export default function HomePage() {
       const suggestion = await getSuggestedNickname();
       if (suggestion) {
         form.setValue('nickname', suggestion);
-        setNickname(suggestion);
+        setStoredNickname(suggestion);
       }
     } catch (error) {
       toast({
@@ -101,36 +84,13 @@ export default function HomePage() {
   };
   
   const onSubmit = (data: z.infer<typeof FormSchema>) => {
-    setNickname(data.nickname);
+    setStoredNickname(data.nickname);
+    setNickname(data.nickname); 
+    addPlayer(data.nickname); 
+    setHost();
     setIsDialogOpen(true);
   }
   
-  const handleJoinRoom = (roomId: string) => {
-    const currentNickname = form.getValues('nickname');
-    if (!currentNickname || currentNickname.length < 2) {
-        toast({
-            variant: "destructive",
-            title: "Nickname required",
-            description: "Please enter a valid nickname before joining a room.",
-        });
-        form.setFocus('nickname');
-        return;
-    }
-    setNickname(currentNickname);
-    router.push(`/room/${roomId}`);
-  }
-  
-  const handleJoinPublic = () => {
-    if (publicRooms.length > 0) {
-      handleJoinRoom(publicRooms[0].id);
-    } else {
-      toast({
-        title: "No Public Rooms",
-        description: "No public rooms available. Why not create one?",
-      });
-    }
-  };
-
   if (!isClient) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-4">
@@ -168,35 +128,11 @@ export default function HomePage() {
                 )}
               />
               <Button type="submit" className="w-full">
-                <Plus className="mr-2 h-4 w-4" /> Create Private Room
+                <Plus className="mr-2 h-4 w-4" /> Create Game Room
               </Button>
             </form>
           </Form>
         </CardContent>
-        <CardFooter className="flex flex-col gap-4">
-            <div className="w-full text-center text-sm text-muted-foreground">or join a public game</div>
-             <Button className="w-full" onClick={handleJoinPublic} disabled={publicRooms.length === 0}>
-                <Users className="mr-2 h-4 w-4" /> Join Public Game
-              </Button>
-            {publicRooms.length > 0 && (
-                <div className="w-full space-y-2 pt-4">
-                    <h3 className="font-semibold text-center">Active Rooms</h3>
-                    {publicRooms.map(room => (
-                        <div key={room.id} className="flex items-center justify-between p-2 rounded-md border">
-                            <div>
-                                <p className="font-medium">{room.name}</p>
-                                <p className="text-sm text-muted-foreground">
-                                    <Users className="inline h-3 w-3 mr-1" /> {room.playerCount}/{room.maxPlayers}
-                                </p>
-                            </div>
-                            <Button size="sm" onClick={() => handleJoinRoom(room.id)}>
-                                <LogIn className="mr-2 h-4 w-4"/> Join
-                            </Button>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </CardFooter>
       </Card>
       <CreateRoomDialog 
         isOpen={isDialogOpen} 
@@ -206,5 +142,3 @@ export default function HomePage() {
     </div>
   );
 }
-
-    

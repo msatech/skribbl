@@ -2,62 +2,38 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useSocket } from '@/contexts/socket-context';
+import { useGame } from '@/contexts/game-context';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Send, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Message, Player, SystemMessage } from '@/types';
+import type { Player, ChatMessage } from '@/types';
 
 type ChatProps = {
-  roomId: string;
   players: Player[];
   me: Player | undefined;
   isDrawer: boolean;
+  onSendMessage: (guess: string) => void;
 };
 
-type ChatMessage = (Message & { type: 'user' }) | (SystemMessage & { type: 'system' });
-
-export default function Chat({ roomId, players, me, isDrawer }: ChatProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export default function Chat({ players, me, isDrawer, onSendMessage }: ChatProps) {
   const [newMessage, setNewMessage] = useState('');
-  const { socket } = useSocket();
+  const { chatMessages } = useGame();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onNewMessage = (msg: Message) => {
-      setMessages(prev => [...prev, { ...msg, type: 'user' }]);
-    };
-    const onSystemMessage = (msg: SystemMessage) => {
-      setMessages(prev => [...prev, { ...msg, type: 'system' }]);
-    };
-    
-    socket?.on('newMessage', onNewMessage);
-    socket?.on('systemMessage', onSystemMessage);
-    socket?.on('roundEnd', () => setTimeout(() => setMessages([]), 5000));
-    socket?.on('chooseWord', () => setMessages([]));
-
-    return () => {
-      socket?.off('newMessage', onNewMessage);
-      socket?.off('systemMessage', onSystemMessage);
-      socket?.off('roundEnd');
-      socket?.off('chooseWord');
-    };
-  }, [socket]);
   
   useEffect(() => {
     if (scrollAreaRef.current) {
         const viewport = scrollAreaRef.current.querySelector('div[data-radix-scroll-area-viewport]');
         if(viewport) viewport.scrollTop = viewport.scrollHeight;
     }
-  }, [messages]);
+  }, [chatMessages]);
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newMessage.trim() && socket && !isDrawer) {
-      socket.emit('sendMessage', { roomId, message: newMessage });
+    if (newMessage.trim() && !isDrawer) {
+      onSendMessage(newMessage);
       setNewMessage('');
     }
   };
@@ -70,7 +46,7 @@ export default function Chat({ roomId, players, me, isDrawer }: ChatProps) {
       </div>
       <ScrollArea className="flex-grow p-3" ref={scrollAreaRef}>
         <div className="space-y-4">
-          {messages.map((msg, index) => (
+          {chatMessages.map((msg, index) => (
             <div key={index} className={cn('flex items-start gap-3', msg.type === 'system' && 'justify-center')}>
               {msg.type === 'user' ? (
                 <>
@@ -83,7 +59,7 @@ export default function Chat({ roomId, players, me, isDrawer }: ChatProps) {
                   </div>
                 </>
               ) : (
-                <p className="text-sm italic text-muted-foreground bg-muted px-2 py-1 rounded-md">{msg.content}</p>
+                <p className={cn("text-sm italic text-muted-foreground bg-muted px-2 py-1 rounded-md", msg.isCorrectGuess && "bg-green-200 text-green-800")}>{msg.content}</p>
               )}
             </div>
           ))}
@@ -106,4 +82,3 @@ export default function Chat({ roomId, players, me, isDrawer }: ChatProps) {
     </div>
   );
 }
-    

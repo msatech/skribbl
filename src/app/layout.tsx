@@ -4,8 +4,8 @@ import { Inter, Source_Code_Pro } from 'next/font/google';
 import { Toaster } from '@/components/ui/toaster';
 import './globals.css';
 import { cn } from '@/lib/utils';
-import { SocketProvider } from '@/contexts/socket-context';
 import { AudioProvider } from '@/hooks/use-audio';
+import { GameProvider } from '@/contexts/game-context';
 
 const fontBody = Inter({
   subsets: ['latin'],
@@ -35,15 +35,13 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Source+Code+Pro&display=swap" rel="stylesheet" />
       </head>
       <body className={cn('font-body antialiased', fontBody.variable, fontCode.variable)}>
-        <SocketProvider>
+        <GameProvider>
           <AudioProvider>
             {children}
             <Toaster />
           </AudioProvider>
-        </SocketProvider>
+        </GameProvider>
       </body>
     </html>
   );
 }
-
-    

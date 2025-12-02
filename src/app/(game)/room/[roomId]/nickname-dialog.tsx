@@ -31,11 +31,10 @@ const FormSchema = z.object({
 
 type NicknameDialogProps = {
   isOpen: boolean;
-  setIsOpen: (isOpen: boolean) => void;
   onConfirm: (nickname: string) => void;
 };
 
-export default function NicknameDialog({ isOpen, setIsOpen, onConfirm }: NicknameDialogProps) {
+export default function NicknameDialog({ isOpen, onConfirm }: NicknameDialogProps) {
   const { toast } = useToast();
   const [isSuggesting, setIsSuggesting] = useState(false);
 
@@ -66,11 +65,10 @@ export default function NicknameDialog({ isOpen, setIsOpen, onConfirm }: Nicknam
 
   const onSubmit = (values: z.infer<typeof FormSchema>) => {
     onConfirm(values.nickname);
-    setIsOpen(false);
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog open={isOpen} onOpenChange={() => {}}>
       <DialogContent className="sm:max-w-[425px]" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Welcome!</DialogTitle>

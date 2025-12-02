@@ -17,15 +17,14 @@ import { cn } from '@/lib/utils';
 
 type LeaderboardDialogProps = {
   isOpen: boolean;
-  onOpenChange: (open: boolean) => void;
   scores: Player[];
   onPlayAgain: () => void;
   isHost: boolean;
 };
 
-export default function LeaderboardDialog({ isOpen, onOpenChange, scores, onPlayAgain, isHost }: LeaderboardDialogProps) {
+export default function LeaderboardDialog({ isOpen, scores, onPlayAgain, isHost }: LeaderboardDialogProps) {
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={() => {}}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-center text-2xl">Game Over!</DialogTitle>
