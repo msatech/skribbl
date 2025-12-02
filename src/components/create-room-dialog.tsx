@@ -22,7 +22,7 @@ import { getSuggestedRoomName } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
 import { useSocket } from '@/contexts/socket-context';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { FormControl } from './ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 
 const RoomSettingsSchema = z.object({
   roomName: z.string().min(3, 'Too short').max(30, 'Too long'),
@@ -115,81 +115,156 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
             Customize your game settings and invite your friends.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="roomName" className="text-right">Room Name</Label>
-            <div className="col-span-3 flex gap-2">
-              <Input id="roomName" {...form.register('roomName')} className="w-full" />
-              <Button type="button" variant="outline" size="icon" onClick={handleSuggestRoomName} disabled={isSuggesting}>
-                <Sparkles className={`h-4 w-4 ${isSuggesting ? 'animate-spin' : ''}`} />
-              </Button>
-            </div>
-            {form.formState.errors.roomName && <p className="col-span-4 text-xs text-destructive text-right">{form.formState.errors.roomName.message}</p>}
-          </div>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4 py-4">
+            <FormField
+              control={form.control}
+              name="roomName"
+              render={({ field }) => (
+                <FormItem className="grid grid-cols-4 items-center gap-4">
+                  <FormLabel className="text-right">Room Name</FormLabel>
+                  <div className="col-span-3 flex gap-2">
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <Button type="button" variant="outline" size="icon" onClick={handleSuggestRoomName} disabled={isSuggesting}>
+                      <Sparkles className={`h-4 w-4 ${isSuggesting ? 'animate-spin' : ''}`} />
+                    </Button>
+                  </div>
+                  <FormMessage className="col-span-4 text-xs text-right" />
+                </FormItem>
+              )}
+            />
 
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="rounds" className="text-right">Rounds</Label>
-            <Input id="rounds" type="number" {...form.register('rounds')} className="col-span-3" />
-             {form.formState.errors.rounds && <p className="col-span-4 text-xs text-destructive text-right">{form.formState.errors.rounds.message}</p>}
-          </div>
+            <FormField
+              control={form.control}
+              name="rounds"
+              render={({ field }) => (
+                <FormItem className="grid grid-cols-4 items-center gap-4">
+                  <FormLabel className="text-right">Rounds</FormLabel>
+                  <FormControl>
+                    <Input type="number" {...field} className="col-span-3" />
+                  </FormControl>
+                  <FormMessage className="col-span-4 text-xs text-right" />
+                </FormItem>
+              )}
+            />
 
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="drawTime" className="text-right">Draw Time (s)</Label>
-            <Input id="drawTime" type="number" {...form.register('drawTime')} className="col-span-3" />
-            {form.formState.errors.drawTime && <p className="col-span-4 text-xs text-destructive text-right">{form.formState.errors.drawTime.message}</p>}
-          </div>
+            <FormField
+              control={form.control}
+              name="drawTime"
+              render={({ field }) => (
+                <FormItem className="grid grid-cols-4 items-center gap-4">
+                  <FormLabel className="text-right">Draw Time (s)</FormLabel>
+                  <FormControl>
+                    <Input type="number" {...field} className="col-span-3" />
+                  </FormControl>
+                  <FormMessage className="col-span-4 text-xs text-right" />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={form.control}
+              name="maxPlayers"
+              render={({ field }) => (
+                <FormItem className="grid grid-cols-4 items-center gap-4">
+                  <FormLabel className="text-right">Max Players</FormLabel>
+                  <FormControl>
+                    <Input type="number" {...field} className="col-span-3" />
+                  </FormControl>
+                  <FormMessage className="col-span-4 text-xs text-right" />
+                </FormItem>
+              )}
+            />
 
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="maxPlayers" className="text-right">Max Players</Label>
-            <Input id="maxPlayers" type="number" {...form.register('maxPlayers')} className="col-span-3" />
-            {form.formState.errors.maxPlayers && <p className="col-span-4 text-xs text-destructive text-right">{form.formState.errors.maxPlayers.message}</p>}
-          </div>
+            <FormField
+              control={form.control}
+              name="wordLength"
+              render={({ field }) => (
+                <FormItem className="grid grid-cols-4 items-center gap-4">
+                  <FormLabel className="text-right">Word Length</FormLabel>
+                  <FormControl>
+                    <Input type="number" {...field} className="col-span-3" placeholder="0 for any" />
+                  </FormControl>
+                  <FormMessage className="col-span-4 text-xs text-right" />
+                </FormItem>
+              )}
+            />
 
-           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="wordLength" className="text-right">Word Length</Label>
-            <Input id="wordLength" type="number" {...form.register('wordLength')} className="col-span-3" placeholder="0 for any"/>
-            {form.formState.errors.wordLength && <p className="col-span-4 text-xs text-destructive text-right">{form.formState.errors.wordLength.message}</p>}
-          </div>
-
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right">Game Mode</Label>
-            <Select onValueChange={(value) => form.setValue('gameMode', value as 'normal' | 'combination')} defaultValue={form.getValues('gameMode')}>
-                <FormControl>
-                    <SelectTrigger className="col-span-3">
+            <FormField
+              control={form.control}
+              name="gameMode"
+              render={({ field }) => (
+                <FormItem className="grid grid-cols-4 items-center gap-4">
+                  <FormLabel className="text-right">Game Mode</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger className="col-span-3">
                         <SelectValue placeholder="Select game mode" />
-                    </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                    <SelectItem value="normal">Normal</SelectItem>
-                    <SelectItem value="combination">Combination</SelectItem>
-                </SelectContent>
-            </Select>
-          </div>
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="normal">Normal</SelectItem>
+                      <SelectItem value="combination">Combination</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )}
+            />
           
-           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="wordCount" className="text-right">Word Count</Label>
-            <Input id="wordCount" type="number" {...form.register('wordCount')} className="col-span-3" disabled={form.watch('gameMode') !== 'combination'}/>
-            {form.formState.errors.wordCount && <p className="col-span-4 text-xs text-destructive text-right">{form.formState.errors.wordCount.message}</p>}
-          </div>
+            <FormField
+              control={form.control}
+              name="wordCount"
+              render={({ field }) => (
+                <FormItem className="grid grid-cols-4 items-center gap-4">
+                  <FormLabel className="text-right">Word Count</FormLabel>
+                  <FormControl>
+                    <Input type="number" {...field} className="col-span-3" disabled={form.watch('gameMode') !== 'combination'} />
+                  </FormControl>
+                  <FormMessage className="col-span-4 text-xs text-right" />
+                </FormItem>
+              )}
+            />
 
-           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="hints" className="text-right">Hints</Label>
-            <Input id="hints" type="number" {...form.register('hints')} className="col-span-3" />
-            {form.formState.errors.hints && <p className="col-span-4 text-xs text-destructive text-right">{form.formState.errors.hints.message}</p>}
-          </div>
+            <FormField
+              control={form.control}
+              name="hints"
+              render={({ field }) => (
+                <FormItem className="grid grid-cols-4 items-center gap-4">
+                  <FormLabel className="text-right">Hints</FormLabel>
+                  <FormControl>
+                    <Input type="number" {...field} className="col-span-3" />
+                  </FormControl>
+                  <FormMessage className="col-span-4 text-xs text-right" />
+                </FormItem>
+              )}
+            />
 
-          <div className="flex items-center justify-end space-x-2 pt-4">
-            <Label htmlFor="isPrivate">Private Room</Label>
-            <Switch id="isPrivate" {...form.register('isPrivate')} />
-          </div>
+            <FormField
+              control={form.control}
+              name="isPrivate"
+              render={({ field }) => (
+                <FormItem className="flex items-center justify-end space-x-2 pt-4">
+                  <FormLabel>Private Room</FormLabel>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
 
-          <DialogFooter>
-            <Button type="submit" disabled={isCreating}>
-              {isCreating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              Create Game
-            </Button>
-          </DialogFooter>
-        </form>
+            <DialogFooter>
+              <Button type="submit" disabled={isCreating}>
+                {isCreating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                Create Game
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

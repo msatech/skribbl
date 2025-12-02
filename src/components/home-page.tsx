@@ -152,8 +152,8 @@ export default function HomePage() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full" variant="secondary">
-                <Plus className="mr-2 h-4 w-4" /> Create or Join
+              <Button type="submit" className="w-full">
+                <Plus className="mr-2 h-4 w-4" /> Create Private Room
               </Button>
             </form>
           </Form>
