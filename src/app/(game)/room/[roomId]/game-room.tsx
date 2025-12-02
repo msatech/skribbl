@@ -45,7 +45,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
   }, [nickname]);
   
   useEffect(() => {
-    if (!isConnected || !socket || !nickname) return;
+    if (!isConnected || !socket || !nickname || isNicknameDialogOpen) return;
 
     socket.emit('joinRoom', { roomId, player: { nickname } }, (response: { status: string; room?: Room; message?: string }) => {
       if (response.status !== 'ok') {
@@ -70,12 +70,8 @@ export default function GameRoom({ roomId }: { roomId: string }) {
       setWordChoices(choices);
     };
 
-    const onWordUpdate = ({word: newWord, forDrawer}: {word: string, forDrawer: boolean}) => {
-        if(isDrawer || forDrawer) {
-            setWord(newWord);
-        } else {
-            setWord(newWord.replace(/[^\s]/g, '_'));
-        }
+    const onWordUpdate = ({word: newWord}: {word: string}) => {
+        setWord(newWord);
     }
     
     const onGameOver = (scores: Player[]) => {
@@ -112,7 +108,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
       socket.off('playSound', onPlaySound);
       socket.off('wordUpdate', onWordUpdate);
     };
-  }, [isConnected, socket, roomId, nickname, router, toast, playSound, isDrawer]);
+  }, [isConnected, socket, roomId, nickname, router, toast, playSound, isNicknameDialogOpen]);
 
   const handleStartGame = () => {
     socket?.emit('startGame', { roomId });
@@ -133,8 +129,21 @@ export default function GameRoom({ roomId }: { roomId: string }) {
   const handleNicknameConfirm = (newNickname: string) => {
     setNickname(newNickname);
     setIsNicknameDialogOpen(false);
-  }
+  };
   
+  const wordDisplay = useMemo(() => {
+    if(!room) return '...';
+
+    if (room.gameState.status === 'playing' || room.gameState.status === 'ended_round') {
+        if (isDrawer) return word;
+        if (!word) return '';
+        return word.split('').map(c => c === ' ' ? ' ' : '_').join('');
+    }
+    if(room.gameState.status === 'choosing_word') return 'Choosing word...';
+    if(room.gameState.status === 'ended_round') return `Word: ${revealedWord}`;
+    return 'Waiting...';
+  }, [room, isDrawer, word, revealedWord]);
+
   if (isNicknameDialogOpen) {
     return <NicknameDialog 
                 isOpen={isNicknameDialogOpen} 
@@ -153,17 +162,6 @@ export default function GameRoom({ roomId }: { roomId: string }) {
   }
 
   const { gameState, players, settings } = room;
-  
-  const wordDisplay = useMemo(() => {
-    if (gameState.status === 'playing' || gameState.status === 'ended_round') {
-        if (isDrawer) return word;
-        return word.split('').map(c => c === ' ' ? ' ' : '_').join('');
-    }
-    if(gameState.status === 'choosing_word') return 'Choosing word...';
-    if(gameState.status === 'ended_round') return `Word: ${revealedWord}`;
-    return 'Waiting...';
-  }, [gameState.status, isDrawer, word, revealedWord]);
-  
   const currentDrawer = players.find(p => p.id === gameState.currentDrawer);
 
   return (
@@ -183,7 +181,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
         
         <main className="lg:col-span-2 order-1 lg:order-2 bg-card rounded-lg border flex flex-col min-h-0">
             <div className="flex-shrink-0 flex justify-around items-center p-2 text-center border-b">
-                <div><span className="text-xs sm:text-sm text-muted-foreground">Round</span><br/><span className="font-bold text-sm sm:text-base">{Math.min(gameState.currentRound + 1, settings.rounds)} / {settings.rounds}</span></div>
+                <div><span className="text-xs sm:text-sm text-muted-foreground">Round</span><br/><span className="font-bold text-sm sm:text-base">{Math.min(gameState.currentRound, settings.rounds)} / {settings.rounds}</span></div>
                 <div className="text-base sm:text-lg font-bold tracking-widest text-center flex-1 px-2">
                     {wordDisplay.split('').join(' ')}
                 </div>
@@ -255,5 +253,3 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     </div>
   );
 }
-
-    
