@@ -153,9 +153,9 @@ app.prepare().then(() => {
         if (room.timerInterval) clearInterval(room.timerInterval);
 
         const currentDrawerIndex = room.players.findIndex(p => p.id === room.gameState.currentDrawer);
-        const nextDrawerIndex = (currentDrawerIndex + 1) % room.players.length;
+        let nextDrawerIndex = (currentDrawerIndex + 1) % room.players.length;
 
-        if (nextDrawerIndex === 0) {
+        if (currentDrawerIndex === -1 || nextDrawerIndex === 0) {
             room.gameState.currentRound += 1;
         }
         
@@ -310,7 +310,7 @@ app.prepare().then(() => {
           if (!room.gameState.guessedPlayers.includes(socket.id)) {
             
             const timeBonus = Math.floor(room.gameState.timer * 1.5);
-            const guessersCount = room.players.length - 1 - (room.gameState.currentDrawer ? 1 : 0);
+            const guessersCount = room.players.filter(p => p.id !== room.gameState.currentDrawer).length;
             const orderBonus = Math.max(0, (guessersCount - room.gameState.guessedPlayers.length -1) * 50);
             const points = 100 + timeBonus + orderBonus;
             player.score += points;
@@ -324,8 +324,7 @@ app.prepare().then(() => {
             io.to(roomId).emit('systemMessage', { content: `${player.nickname} guessed the word!` });
             io.to(roomId).emit('roomState', room);
 
-            const guessers = room.players.filter(p => p.id !== room.gameState.currentDrawer);
-            if (guessers.length > 0 && room.gameState.guessedPlayers.length >= guessers.length) {
+            if (room.gameState.guessedPlayers.length >= guessersCount) {
               endRound(roomId, 'all_guessed');
             }
           }
