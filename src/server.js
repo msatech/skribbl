@@ -376,20 +376,23 @@ app.prepare().then(() => {
           if (room.players.length === 0) {
             if (room.timerInterval) clearInterval(room.timerInterval);
             delete rooms[roomId];
-          } else {
-            if (removedPlayer.isHost && room.players.length > 0) {
-              room.players[0].isHost = true;
-            }
-             if (room.gameState.status !== 'waiting' && room.gameState.currentDrawer === socket.id) {
-               endRound(roomId, 'drawer_left');
-            }
-             if(room.gameState.status !== 'waiting' && room.players.length < 2) {
-                endGame(roomId);
-             }
-             io.to(roomId).emit('roomState', room);
+            io.emit('publicRoomsUpdate', getPublicRooms());
+            break;
+          }
+
+          if (removedPlayer.isHost) {
+            room.players[0].isHost = true;
+          }
+
+          if (room.gameState.status !== 'waiting' && room.players.length < 2) {
+             endGame(roomId);
+          } else if (room.gameState.status !== 'waiting' && removedPlayer.id === room.gameState.currentDrawer) {
+             endRound(roomId, 'drawer_left');
           }
           
-          if (room && !room.isPrivate) {
+          io.to(roomId).emit('roomState', room);
+          
+          if (!room.isPrivate) {
             io.emit('publicRoomsUpdate', getPublicRooms());
           }
           break;
@@ -407,5 +410,3 @@ app.prepare().then(() => {
       process.exit(1);
     });
 });
-
-    
