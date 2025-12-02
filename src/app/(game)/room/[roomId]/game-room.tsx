@@ -132,6 +132,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
 
   const { gameState, players, settings } = room;
   const wordDisplay = revealedWord ? revealedWord : (isDrawer ? wordToDraw : wordToDraw.split('').join(' '));
+  const currentDrawer = players.find(p => p.id === gameState.currentDrawer);
 
   return (
     <div className="flex h-screen flex-col p-2 sm:p-4 gap-4">
@@ -150,7 +151,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
         
         <main className="lg:col-span-2 order-1 lg:order-2 bg-card rounded-lg border flex flex-col min-h-0">
             <div className="flex-shrink-0 flex justify-around items-center p-2 text-center border-b">
-                <div><span className="text-xs sm:text-sm text-muted-foreground">Round</span><br/><span className="font-bold text-sm sm:text-base">{gameState.currentRound} / {settings.rounds}</span></div>
+                <div><span className="text-xs sm:text-sm text-muted-foreground">Round</span><br/><span className="font-bold text-sm sm:text-base">{Math.ceil(gameState.currentRound / players.length)} / {settings.rounds}</span></div>
                 <div className="text-base sm:text-lg font-bold tracking-widest text-center flex-1 px-2">
                     {gameState.status === 'playing' ? wordDisplay : 'Waiting...'}
                 </div>
@@ -168,6 +169,12 @@ export default function GameRoom({ roomId }: { roomId: string }) {
                          {me?.isHost && players.length < 2 && (
                             <p className="text-white">You need at least 2 players to start.</p>
                         )}
+                    </div>
+                 )}
+                 {gameState.status === 'choosing_word' && !isDrawer && currentDrawer && (
+                    <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center z-10 rounded-b-lg">
+                        <p className="text-xl sm:text-2xl text-white mb-2">{currentDrawer.nickname} is choosing a word...</p>
+                        <Loader2 className="h-8 w-8 animate-spin text-white"/>
                     </div>
                  )}
                 <Canvas roomId={roomId} isDrawer={!!isDrawer} />
@@ -210,3 +217,5 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     </div>
   );
 }
+
+    

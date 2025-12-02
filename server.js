@@ -103,31 +103,32 @@ app.prepare().then(() => {
     });
 
     socket.on('joinRoom', ({ roomId, player }, callback) => {
-      if (!rooms[roomId]) {
+      const room = rooms[roomId];
+      if (!room) {
         return callback({ status: 'error', message: 'Room not found' });
       }
       
-      const existingPlayer = rooms[roomId].players.find(p => p.id === socket.id);
+      const existingPlayer = room.players.find(p => p.id === socket.id);
       if (existingPlayer) {
-        io.to(socket.id).emit('roomState', rooms[roomId]);
-        return callback({ status: 'ok', room: rooms[roomId] });
+        io.to(socket.id).emit('roomState', room);
+        return callback({ status: 'ok', room: room });
       }
 
-      if (rooms[roomId].players.length >= rooms[roomId].settings.maxPlayers) {
+      if (room.players.length >= room.settings.maxPlayers) {
         return callback({ status: 'error', message: 'Room is full' });
       }
 
       const newPlayer = { ...player, id: socket.id, score: 0, isHost: false };
-      rooms[roomId].players.push(newPlayer);
+      room.players.push(newPlayer);
       socket.join(roomId);
       
-      if (rooms[roomId].drawingData.length > 0) {
-        socket.emit('drawingHistory', rooms[roomId].drawingData);
+      if (room.drawingData.length > 0) {
+        socket.emit('drawingHistory', room.drawingData);
       }
 
-      callback({ status: 'ok', room: rooms[roomId] });
-      io.to(roomId).emit('roomState', rooms[roomId]);
-      if (!rooms[roomId].isPrivate) {
+      callback({ status: 'ok', room: room });
+      io.to(roomId).emit('roomState', room);
+      if (!room.isPrivate) {
         io.emit('publicRoomsUpdate', getPublicRooms());
       }
     });
@@ -147,7 +148,7 @@ app.prepare().then(() => {
       const room = rooms[roomId];
       if (!room || room.gameState.status !== 'playing') return;
 
-      const drawerIndex = (room.gameState.currentRound - 1 + room.players.indexOf(room.players.find(p => p.id === room.gameState.currentDrawer)) + 1) % room.players.length;
+      const drawerIndex = (room.gameState.currentRound - 1) % room.players.length;
       const drawer = room.players[drawerIndex];
 
       if (!drawer) {
@@ -157,45 +158,58 @@ app.prepare().then(() => {
 
       room.gameState.currentDrawer = drawer.id;
       room.gameState.guessedPlayers = [];
+      room.gameState.status = 'choosing_word';
       room.drawingData = [];
       io.to(roomId).emit('clearCanvas');
+      
+      io.to(roomId).emit('roomState', room);
 
       const wordChoices = getShuffledWords(3, room.settings, roomId);
       io.to(drawer.id).emit('chooseWord', wordChoices);
-
-      room.gameState.timer = room.settings.drawTime;
-      room.gameState.hintsUsed = 0;
-      io.to(roomId).emit('roomState', room);
-      io.to(roomId).emit('systemMessage', { content: `${drawer.nickname} is drawing!` });
-
-      if (room.timerInterval) clearInterval(room.timerInterval);
-      room.timerInterval = setInterval(() => {
-        if (!rooms[roomId]) {
-            clearInterval(room.timerInterval);
-            return;
-        }
-        room.gameState.timer -= 1;
-        io.to(roomId).emit('timerUpdate', room.gameState.timer);
-        
-        if (room.gameState.currentWord && room.settings.hints > 0) {
-            const timePerHint = Math.floor(room.settings.drawTime / (room.settings.hints + 1));
-            if (room.gameState.timer > 0 && room.gameState.timer % timePerHint === 0 && room.gameState.hintsUsed < room.settings.hints) {
-                room.gameState.hintsUsed++;
-                const wordWithHints = getWordWithHints(room.gameState.currentWord, room.gameState.hintsUsed, room.settings.hints, roomId);
-                io.to(roomId).emit('wordUpdate', { word: wordWithHints });
-                io.to(room.gameState.currentDrawer).emit('wordUpdate', { word: room.gameState.currentWord, forDrawer: true });
-            }
-        }
-
-        if (room.gameState.timer <= 0) {
-          endRound(roomId, 'time_up');
-        }
-      }, 1000);
     };
+
+    const beginDrawingPhase = (roomId) => {
+        const room = rooms[roomId];
+        if (!room || room.gameState.status !== 'choosing_word') return;
+
+        room.gameState.status = 'playing';
+        room.gameState.timer = room.settings.drawTime;
+        room.gameState.hintsUsed = 0;
+        
+        io.to(roomId).emit('roomState', room);
+        const drawer = room.players.find(p => p.id === room.gameState.currentDrawer);
+        if (drawer) {
+            io.to(roomId).emit('systemMessage', { content: `${drawer.nickname} is drawing!` });
+        }
+
+        if (room.timerInterval) clearInterval(room.timerInterval);
+        room.timerInterval = setInterval(() => {
+            if (!rooms[roomId]) {
+                clearInterval(room.timerInterval);
+                return;
+            }
+            room.gameState.timer -= 1;
+            io.to(roomId).emit('timerUpdate', room.gameState.timer);
+            
+            if (room.gameState.currentWord && room.settings.hints > 0) {
+                const timePerHint = Math.floor(room.settings.drawTime / (room.settings.hints + 1));
+                if (room.gameState.timer > 0 && room.gameState.timer % timePerHint === 0 && room.gameState.hintsUsed < room.settings.hints) {
+                    room.gameState.hintsUsed++;
+                    const wordWithHints = getWordWithHints(room.gameState.currentWord, room.gameState.hintsUsed, room.settings.hints, roomId);
+                    io.to(roomId).emit('wordUpdate', { word: wordWithHints });
+                    io.to(room.gameState.currentDrawer).emit('wordUpdate', { word: room.gameState.currentWord, forDrawer: true });
+                }
+            }
+
+            if (room.gameState.timer <= 0) {
+              endRound(roomId, 'time_up');
+            }
+      }, 1000);
+    }
 
     const endRound = (roomId, reason) => {
       const room = rooms[roomId];
-      if (!room || room.gameState.status !== 'playing') return;
+      if (!room || (room.gameState.status !== 'playing' && room.gameState.status !== 'choosing_word')) return;
       if (room.timerInterval) clearInterval(room.timerInterval);
 
       io.to(roomId).emit('systemMessage', { content: `Round over! The word was: ${room.gameState.currentWord}` });
@@ -208,6 +222,7 @@ app.prepare().then(() => {
           endGame(roomId);
         } else {
           room.gameState.currentRound += 1;
+          room.gameState.status = 'playing'; // Set status back for startRound check
           startRound(roomId);
         }
       }, 5000);
@@ -262,6 +277,7 @@ app.prepare().then(() => {
       room.gameState.guessedPlayers = [];
       io.to(roomId).emit('wordUpdate', { word: getWordMask(word, roomId) });
       io.to(socket.id).emit('wordUpdate', { word: word, forDrawer: true });
+      beginDrawingPhase(roomId);
     });
 
     socket.on('sendMessage', ({ roomId, message }) => {
@@ -289,7 +305,7 @@ app.prepare().then(() => {
 
             // Check if all guessers have guessed
             const guessers = room.players.filter(p => p.id !== room.gameState.currentDrawer);
-            if (room.gameState.guessedPlayers.length >= guessers.length && guessers.length > 0) {
+            if (guessers.length > 0 && room.gameState.guessedPlayers.length >= guessers.length) {
               endRound(roomId, 'all_guessed');
             }
           }
@@ -340,10 +356,10 @@ app.prepare().then(() => {
             if (removedPlayer.isHost && room.players.length > 0) {
               room.players[0].isHost = true;
             }
-             if (room.gameState.status === 'playing' && room.gameState.currentDrawer === socket.id) {
+             if (room.gameState.status !== 'waiting' && room.gameState.currentDrawer === socket.id) {
                endRound(roomId, 'drawer_left');
             }
-             if(room.gameState.status === 'playing' && room.players.length < 2) {
+             if(room.gameState.status !== 'waiting' && room.players.length < 2) {
                 endGame(roomId);
              }
              io.to(roomId).emit('roomState', room);
@@ -367,3 +383,5 @@ app.prepare().then(() => {
       process.exit(1);
     });
 });
+
+    
