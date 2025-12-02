@@ -141,6 +141,7 @@ app.prepare().then(() => {
 
       room.gameState.status = 'playing';
       room.gameState.currentRound = 0; 
+      room.gameState.currentDrawer = null;
       room.players.forEach(p => p.score = 0);
       io.to(roomId).emit('roomState', room);
       startRound(roomId);
@@ -151,12 +152,17 @@ app.prepare().then(() => {
         if (!room || room.gameState.status === 'ended') return;
 
         if (room.timerInterval) clearInterval(room.timerInterval);
-
-        const currentDrawerIndex = room.players.findIndex(p => p.id === room.gameState.currentDrawer);
-        let nextDrawerIndex = (currentDrawerIndex + 1) % room.players.length;
-
-        if (currentDrawerIndex === -1 || nextDrawerIndex === 0) {
-            room.gameState.currentRound += 1;
+        
+        let nextDrawerIndex;
+        if (room.gameState.currentDrawer === null) {
+            nextDrawerIndex = 0; // First player starts
+            room.gameState.currentRound = 1;
+        } else {
+            const currentDrawerIndex = room.players.findIndex(p => p.id === room.gameState.currentDrawer);
+            nextDrawerIndex = (currentDrawerIndex + 1) % room.players.length;
+            if (nextDrawerIndex === 0) {
+                room.gameState.currentRound += 1;
+            }
         }
         
         if (room.gameState.currentRound > room.settings.rounds) {
@@ -401,3 +407,5 @@ app.prepare().then(() => {
       process.exit(1);
     });
 });
+
+    
