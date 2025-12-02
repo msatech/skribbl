@@ -1,3 +1,4 @@
+
 export type Player = {
   id: string;
   nickname: string;
@@ -25,7 +26,7 @@ export type GameSettings = {
 };
 
 export type GameState = {
-  status: 'waiting' | 'choosing_word' | 'playing' | 'ended';
+  status: 'waiting' | 'choosing_word' | 'playing' | 'ended_round' | 'ended';
   currentRound: number;
   currentDrawer: string | null;
   currentWord: string;
@@ -50,5 +51,3 @@ export type PublicRoom = {
   playerCount: number;
   maxPlayers: number;
 }
-
-    

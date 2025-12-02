@@ -69,7 +69,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
         setTimeout(() => setRevealedWord(''), 5000);
     }
     const onSystemMessage = (msg: SystemMessage) => {
-        if (!msg.content.includes("guessed the word") && !msg.content.includes("is choosing a word")) {
+        if (!msg.content.includes("is choosing a word")) {
             toast({ title: msg.content, duration: 2000 });
         }
     };
@@ -146,9 +146,9 @@ export default function GameRoom({ roomId }: { roomId: string }) {
         
         <main className="lg:col-span-2 order-1 lg:order-2 bg-card rounded-lg border flex flex-col min-h-0">
             <div className="flex-shrink-0 flex justify-around items-center p-2 text-center border-b">
-                <div><span className="text-xs sm:text-sm text-muted-foreground">Round</span><br/><span className="font-bold text-sm sm:text-base">{Math.ceil(gameState.currentRound / players.length)} / {settings.rounds}</span></div>
+                <div><span className="text-xs sm:text-sm text-muted-foreground">Round</span><br/><span className="font-bold text-sm sm:text-base">{Math.min(Math.ceil(gameState.currentRound / (players.length || 1)), settings.rounds)} / {settings.rounds}</span></div>
                 <div className="text-base sm:text-lg font-bold tracking-widest text-center flex-1 px-2">
-                    {gameState.status === 'playing' ? wordDisplay : 'Waiting...'}
+                    {gameState.status === 'playing' ? wordDisplay : (gameState.status === 'choosing_word' ? 'Choosing word...' : 'Waiting...')}
                 </div>
                 <div><span className="text-xs sm:text-sm text-muted-foreground">Time</span><br/><span className="font-bold text-sm sm:text-base">{timeLeft}</span></div>
             </div>
