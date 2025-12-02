@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -22,6 +23,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 import { useSocket } from '@/contexts/socket-context';
+import useLocalStorage from '@/hooks/use-local-storage';
 
 
 const RoomSettingsSchema = z.object({
@@ -46,6 +48,7 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
   const router = useRouter();
   const { toast } = useToast();
   const { socket } = useSocket();
+  const [playerUUID] = useLocalStorage('playerUUID', () => crypto.randomUUID());
   const [isSuggesting, setIsSuggesting] = useState(false);
 
   const form = useForm<z.infer<typeof RoomSettingsSchema>>({
@@ -62,15 +65,25 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
       hints: 2,
     },
   });
+
+  // Update default room name if nickname changes
+  useEffect(() => {
+    if (nickname) {
+        form.setValue('roomName', `${nickname}'s Room`);
+    }
+  }, [nickname, form]);
   
-  useState(() => {
+  useEffect(() => {
     if (!socket) return;
-    socket.on('roomCreated', (roomId) => {
+    
+    const handleRoomCreated = (roomId: string) => {
         router.push(`/room/${roomId}`);
-    });
+    };
+
+    socket.on('roomCreated', handleRoomCreated);
 
     return () => {
-        socket.off('roomCreated');
+        socket.off('roomCreated', handleRoomCreated);
     }
   }, [socket, router]);
 
@@ -94,7 +107,7 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
 
   const onSubmit = (values: z.infer<typeof RoomSettingsSchema>) => {
     const { roomName, isPrivate, ...settings } = values;
-    socket?.emit('createRoom', { roomName, isPrivate, settings, nickname });
+    socket?.emit('createRoom', { roomName, isPrivate, settings, nickname, playerUUID });
   };
 
   return (

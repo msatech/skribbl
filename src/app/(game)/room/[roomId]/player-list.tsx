@@ -1,7 +1,7 @@
 
 'use client';
 
-import { Crown, Paintbrush, Users, CheckCircle2 } from 'lucide-react';
+import { Crown, Paintbrush, Users, CheckCircle2, WifiOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -23,7 +23,7 @@ export default function PlayerList({ players, currentDrawerId, guessedPlayerIds 
       <CardHeader className="flex-shrink-0">
         <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-primary"/>
-            Players ({players.length})
+            Players ({players.filter(p => p.connected).length} / {players.length})
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-grow overflow-auto p-3">
@@ -33,9 +33,10 @@ export default function PlayerList({ players, currentDrawerId, guessedPlayerIds 
             {sortedPlayers.map((player) => {
               const hasGuessed = guessedPlayerIds.includes(player.id);
               return (
-              <li key={player.id} className={cn(
+              <li key={player.uuid} className={cn(
                   "flex items-center justify-between p-2 rounded-md bg-secondary transition-colors",
-                  hasGuessed && "bg-green-100 dark:bg-green-900/30"
+                  hasGuessed && "bg-green-100 dark:bg-green-900/30",
+                  !player.connected && "opacity-50"
               )}>
                 <div className="flex items-center gap-3">
                   <Avatar className="h-8 w-8">
@@ -43,7 +44,17 @@ export default function PlayerList({ players, currentDrawerId, guessedPlayerIds 
                   </Avatar>
                   <span className="font-medium truncate">{player.nickname}</span>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 text-muted-foreground">
+                  {!player.connected && (
+                    <Tooltip>
+                      <TooltipTrigger>
+                         <WifiOff className="h-5 w-5 text-destructive" />
+                      </TooltipTrigger>
+                       <TooltipContent>
+                        <p>Disconnected</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                   <span className="font-semibold text-primary">{player.score}</span>
                   {hasGuessed && player.id !== currentDrawerId && (
                     <Tooltip>
@@ -85,5 +96,3 @@ export default function PlayerList({ players, currentDrawerId, guessedPlayerIds 
     </Card>
   );
 }
-
-    

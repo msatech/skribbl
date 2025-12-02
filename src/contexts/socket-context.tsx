@@ -54,11 +54,13 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
       setIsConnected(true);
     });
 
-    socketInstance.on('disconnect', () => {
-      console.log('Disconnected from socket server');
+    socketInstance.on('disconnect', (reason) => {
+      console.log('Disconnected from socket server:', reason);
       setIsConnected(false);
-      setRoom(null);
-      setChatMessages(prev => [...prev, { type: 'system', content: 'You have been disconnected. Attempting to reconnect...' }]);
+      // We don't null out the room state here, to allow for reconnection.
+      if (reason !== 'io client disconnect') { // Don't show on manual disconnect
+         setChatMessages(prev => [...prev, { type: 'system', content: 'You have been disconnected. Attempting to reconnect...' }]);
+      }
     });
     
     socketInstance.on('connect_error', (err) => {
@@ -83,7 +85,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
         }
         setRoom(newRoomState);
         // Clear chat when returning to the waiting state
-        if(newRoomState.gameState.status === 'waiting') {
+        if(newRoomState.gameState.status === 'waiting' && !newRoomState.finalScores?.length) {
             setChatMessages([]);
         }
     };
@@ -103,13 +105,15 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
       setRoom(prevRoom => {
         if (!prevRoom) return null;
 
-        // This is a full state replacement from the server, we just apply it
-        if (action.tool === 'undo' || action.tool === 'clear') {
-            // Server will send a full roomState update for undo/clear
-            return prevRoom;
+        let newHistory;
+        if (action.tool === 'undo') {
+            // Server sends the whole new history on undo
+            newHistory = (action as any).history;
+        } else if (action.tool === 'clear') {
+            newHistory = [];
+        } else {
+            newHistory = [...prevRoom.drawingHistory, action];
         }
-
-        const newHistory = [...prevRoom.drawingHistory, action];
         return { ...prevRoom, drawingHistory: newHistory };
       });
     };
@@ -146,7 +150,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
 
   }, [socket, playSound, toast, room?.gameState.currentDrawerId, room?.gameState.status]);
 
-  const me = room && socket ? room.players.find(p => p.id === socket.id) || null : null;
+  const me = room && socket ? room.players.find(p => p.id === socket.id) : null;
 
   const value: SocketContextType = {
     socket,

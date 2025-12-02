@@ -1,5 +1,4 @@
 
-
 import { type DrawingAction as CanvasDrawingAction, type Line as CanvasLine } from "@/app/(game)/room/[roomId]/canvas";
 
 // Re-exporting with a more specific name if needed, or just use it directly
@@ -7,10 +6,12 @@ export type DrawingAction = CanvasDrawingAction;
 export type Line = CanvasLine;
 
 export type Player = {
-  id: string;
+  id: string; // socket.id
+  uuid: string; // persistent unique id
   nickname: string;
   score: number;
   isHost: boolean;
+  connected: boolean;
 };
 
 export type Message = {
@@ -39,9 +40,9 @@ export type GameSettings = {
 export type GameState = {
   status: 'waiting' | 'choosing_word' | 'playing' | 'ended_round' | 'ended';
   currentRound: number;
-  currentDrawerId: string | null;
+  currentDrawerId: string | null; // socket.id
   timer: number;
-  guessedPlayerIds: string[];
+  guessedPlayerIds: string[]; // array of socket.id
   word: string;
   turn: number;
 };

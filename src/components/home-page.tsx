@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -40,13 +41,18 @@ const FormSchema = z.object({
 export default function HomePage() {
   const { toast } = useToast();
   const { isConnected } = useSocket();
-  const [storedNickname, setStoredNickname] = useLocalStorage('nickname', '');
+  const [nickname, setNickname] = useLocalStorage('nickname', '');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [playerUUID, setPlayerUUID] = useLocalStorage('playerUUID', () => crypto.randomUUID());
+
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
     setIsClient(true);
+    // Clear last room ID when on the homepage
+    localStorage.removeItem('lastRoomId');
   }, []);
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -55,10 +61,10 @@ export default function HomePage() {
   });
 
   useEffect(() => {
-    if (storedNickname && isClient) {
-      form.setValue('nickname', storedNickname);
+    if (nickname && isClient) {
+      form.setValue('nickname', nickname);
     }
-  }, [storedNickname, form, isClient]);
+  }, [nickname, form, isClient]);
 
   const handleSuggestNickname = async () => {
     setIsSuggesting(true);
@@ -66,7 +72,7 @@ export default function HomePage() {
       const suggestion = await getSuggestedNickname();
       if (suggestion) {
         form.setValue('nickname', suggestion);
-        setStoredNickname(suggestion);
+        setNickname(suggestion);
       }
     } catch (error) {
       toast({
@@ -80,7 +86,7 @@ export default function HomePage() {
   };
   
   const onSubmit = (data: z.infer<typeof FormSchema>) => {
-    setStoredNickname(data.nickname);
+    setNickname(data.nickname);
     setIsDialogOpen(true);
   }
   
@@ -120,7 +126,7 @@ export default function HomePage() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full" disabled={!isConnected}>
+              <Button type="submit" className="w-full" disabled={!isConnected || !form.formState.isValid}>
                 { isConnected ? <><Plus className="mr-2 h-4 w-4" /> Create Game Room</> : <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Connecting...</>}
               </Button>
             </form>

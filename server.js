@@ -11,12 +11,13 @@ app.use(cors());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*', // Allow all origins
+    origin: ['http://localhost:9002', 'http://localhost:3000'],
     methods: ['GET', 'POST'],
   },
 });
 
 const rooms = {};
+const DISCONNECT_TIMEOUT = 15000; // 15 seconds
 
 const getShuffledWords = (count) => {
     const shuffled = [...words].sort(() => 0.5 - Math.random());
@@ -26,7 +27,7 @@ const getShuffledWords = (count) => {
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
-  socket.on('createRoom', ({ roomName, isPrivate, settings, nickname }) => {
+  socket.on('createRoom', ({ roomName, isPrivate, settings, nickname, playerUUID }) => {
     let roomId = Math.random().toString(36).substring(2, 8);
     while (rooms[roomId]) {
         roomId = Math.random().toString(36).substring(2, 8);
@@ -34,9 +35,11 @@ io.on('connection', (socket) => {
     
     const host = {
       id: socket.id,
+      uuid: playerUUID,
       nickname,
       score: 0,
       isHost: true,
+      connected: true,
     };
 
     rooms[roomId] = {
@@ -45,6 +48,7 @@ io.on('connection', (socket) => {
       isPrivate,
       settings,
       players: [host],
+      finalScores: [],
       gameState: {
         status: 'waiting',
         currentRound: 0,
@@ -60,37 +64,42 @@ io.on('connection', (socket) => {
     socket.join(roomId);
     socket.emit('roomCreated', roomId);
     io.to(roomId).emit('roomState', rooms[roomId]);
-    console.log(`Room created: ${roomId} by ${nickname}`);
+    console.log(`Room created: ${roomId} by ${nickname} (${playerUUID})`);
   });
 
-  socket.on('joinRoom', ({ roomId, nickname }) => {
+  socket.on('joinRoom', ({ roomId, nickname, playerUUID }) => {
     const room = rooms[roomId];
     if (!room) {
-      return socket.emit('error', { message: 'Room not found.' });
+      return socket.emit('roomNotFound');
     }
 
-    // Check if player with same nickname is already in the room (and perhaps disconnected)
-    const existingPlayer = room.players.find(p => p.nickname === nickname);
+    const existingPlayer = room.players.find(p => p.uuid === playerUUID);
 
     if (existingPlayer) {
-        // Player is rejoining, update their socket ID
-        existingPlayer.id = socket.id;
-        console.log(`${nickname} re-joined room: ${roomId}`);
+        console.log(`${nickname} (${playerUUID}) re-joined room: ${roomId}`);
+        existingPlayer.id = socket.id; // Update socket ID
+        existingPlayer.connected = true;
+        if (existingPlayer.disconnectTimeout) {
+            clearTimeout(existingPlayer.disconnectTimeout);
+            delete existingPlayer.disconnectTimeout;
+        }
+        io.to(roomId).emit('systemMessage', { content: `${nickname} has reconnected.`});
     } else {
-        // New player joining
         if (room.players.length >= room.settings.maxPlayers) {
             return socket.emit('error', { message: 'Room is full.' });
         }
         
-        const player = {
+        const newPlayer = {
             id: socket.id,
+            uuid: playerUUID,
             nickname,
             score: 0,
-            isHost: false,
+            isHost: room.players.length === 0, // First player is host
+            connected: true,
         };
-        room.players.push(player);
+        room.players.push(newPlayer);
         io.to(roomId).emit('systemMessage', { content: `${nickname} has joined the game.`});
-        console.log(`${nickname} joined room: ${roomId}`);
+        console.log(`${nickname} (${playerUUID}) joined room: ${roomId}`);
     }
     
     socket.join(roomId);
@@ -98,23 +107,49 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('roomState', room);
   });
 
-  socket.on('startGame', (roomId) => {
+  const startGame = (roomId) => {
     const room = rooms[roomId];
-    if (!room || room.players.find(p => p.id === socket.id)?.isHost !== true) return;
-    if (room.players.length < 2) {
-        return socket.emit('systemMessage', { content: 'You need at least 2 players to start.' });
-    }
+    if (!room) return;
     
     room.players.forEach(p => p.score = 0);
-    room.gameState.currentRound = 0;
-    room.gameState.turn = -1;
+    room.finalScores = [];
+    room.gameState = {
+        ...room.gameState,
+        status: 'waiting',
+        currentRound: 0,
+        currentDrawerId: null,
+        timer: 0,
+        guessedPlayerIds: [],
+        word: '',
+        turn: -1,
+    };
+    
+    io.to(roomId).emit('roomState', room);
     
     startRound(roomId);
+  };
+
+  socket.on('startGame', (roomId) => {
+    const room = rooms[roomId];
+    const player = room?.players.find(p => p.id === socket.id);
+    if (!room || !player || !player.isHost) return;
+
+    const activePlayers = room.players.filter(p => p.connected);
+    if (activePlayers.length < 2) {
+        return socket.emit('systemMessage', { content: 'You need at least 2 active players to start.' });
+    }
+    startGame(roomId);
   });
 
   const startRound = (roomId) => {
     const room = rooms[roomId];
     if (!room || room.gameState.status === 'ended') return;
+
+    const activePlayers = room.players.filter(p => p.connected);
+    if (activePlayers.length < 2 && room.gameState.status !== 'waiting') {
+        endGame(roomId, 'Not enough players.');
+        return;
+    }
 
     room.gameState.turn++;
     if (room.gameState.turn >= room.players.length) {
@@ -127,9 +162,20 @@ io.on('connection', (socket) => {
         return;
     }
 
+    // Find the next connected drawer
+    let attempts = 0;
+    while(attempts < room.players.length) {
+        const potentialDrawer = room.players[room.gameState.turn];
+        if (potentialDrawer && potentialDrawer.connected) {
+            break; // Found a connected drawer
+        }
+        room.gameState.turn = (room.gameState.turn + 1) % room.players.length;
+        attempts++;
+    }
+
     const drawer = room.players[room.gameState.turn];
-    if (!drawer) {
-        endGame(roomId); // All players might have left
+    if (!drawer || !drawer.connected) {
+        endGame(roomId, "Could not find a drawer."); // End game if no one is left
         return;
     }
     
@@ -142,18 +188,16 @@ io.on('connection', (socket) => {
     
     const wordChoices = getShuffledWords(3);
     
-    // Send word choices ONLY to the drawer
     io.to(drawer.id).emit('chooseWord', wordChoices);
     
     io.to(roomId).emit('roomState', room);
     io.to(roomId).emit('systemMessage', { content: `${drawer.nickname} is choosing a word...` });
     io.to(roomId).emit('sound', 'new_round');
 
-    // Word choice timeout
+    if (room.wordChoiceTimeout) clearTimeout(room.wordChoiceTimeout);
     room.wordChoiceTimeout = setTimeout(() => {
-        if (room.gameState.status === 'choosing_word') {
+        if (room?.gameState.status === 'choosing_word') {
             const randomWord = wordChoices[Math.floor(Math.random() * wordChoices.length)];
-            // Manually trigger word selection for the drawer
             handleWordChosen(roomId, drawer.id, randomWord);
         }
     }, 5000);
@@ -180,20 +224,26 @@ io.on('connection', (socket) => {
     room.gameState.status = 'playing';
     room.gameState.timer = room.settings.drawTime;
     
+    const drawer = room.players.find(p => p.id === room.gameState.currentDrawerId);
     io.to(roomId).emit('roomState', room);
-    io.to(roomId).emit('systemMessage', { content: `${room.players.find(p => p.id === room.gameState.currentDrawerId).nickname} is drawing!` });
+    io.to(roomId).emit('systemMessage', { content: `${drawer?.nickname} is drawing!` });
 
-    // Start timer
     if (room.timerInterval) clearInterval(room.timerInterval);
     room.timerInterval = setInterval(() => {
-        room.gameState.timer--;
-        io.to(roomId).emit('timerUpdate', room.gameState.timer);
-        
-        if(room.gameState.timer % Math.floor(room.settings.drawTime / (room.settings.hints + 1)) === 0 && room.gameState.timer > 0) {
-            io.to(roomId).emit('roomState', room); // To update word display with hints
+        const currentRoom = rooms[roomId];
+        if (!currentRoom || currentRoom.gameState.status !== 'playing') {
+            clearInterval(room.timerInterval);
+            return;
         }
 
-        if (room.gameState.timer <= 0) {
+        currentRoom.gameState.timer--;
+        io.to(roomId).emit('timerUpdate', currentRoom.gameState.timer);
+        
+        if(currentRoom.gameState.timer > 0 && currentRoom.settings.hints > 0 && currentRoom.gameState.timer % Math.floor(currentRoom.settings.drawTime / (currentRoom.settings.hints + 1)) === 0) {
+            io.to(roomId).emit('roomState', currentRoom);
+        }
+
+        if (currentRoom.gameState.timer <= 0) {
             endRound(roomId, 'time_up');
         }
     }, 1000);
@@ -209,7 +259,7 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('chatMessage', { player, message: guess });
     io.to(roomId).emit('sound', 'message');
 
-    if (guess.toLowerCase() === room.gameState.word.toLowerCase()) {
+    if (guess.trim().toLowerCase() === room.gameState.word.toLowerCase()) {
       room.gameState.guessedPlayerIds.push(player.id);
       
       const basePoints = 200;
@@ -219,24 +269,22 @@ io.on('connection', (socket) => {
       const guesserScore = basePoints + timeBonus + firstGuessBonus;
       player.score += guesserScore;
 
-      // Update drawer's score
       const drawer = room.players.find(p => p.id === room.gameState.currentDrawerId);
       if(drawer) {
-          const guessersCount = room.players.length - 1;
-          const drawerPoints = Math.round(300 / guessersCount);
+          const guessersCount = room.players.filter(p => p.connected).length - 1;
+          const drawerPoints = Math.round(300 / (guessersCount || 1));
           drawer.score += drawerPoints;
       }
       
       io.to(roomId).emit('systemMessage', { content: `${player.nickname} guessed the word!`, isCorrectGuess: true });
       io.to(roomId).emit('sound', 'correct_guess');
 
-      const allGuessed = room.gameState.guessedPlayerIds.length === room.players.length - 1;
+      const allGuessed = room.gameState.guessedPlayerIds.length === room.players.filter(p => p.connected).length - 1;
       if (allGuessed && room.players.length > 1) {
-          const drawer = room.players.find(p => p.id === room.gameState.currentDrawerId);
-          if (drawer) drawer.score += 200;
+          if (drawer) drawer.score += 200; // Perfect round bonus for drawer
           room.players.forEach(p => {
               if (room.gameState.guessedPlayerIds.includes(p.id)) {
-                  p.score += 50;
+                  p.score += 50; // Bonus for all guessers
               }
           });
           endRound(roomId, 'all_guessed');
@@ -252,48 +300,27 @@ io.on('connection', (socket) => {
         if (action.tool === 'clear') {
             room.drawingHistory = [];
         } else if (action.tool === 'undo') {
-            // Find the last continuous line or single action and remove it
             if (room.drawingHistory.length > 0) {
-                const lastAction = room.drawingHistory[room.drawingHistory.length - 1];
-                if (lastAction.tool === 'pencil' || lastAction.tool === 'eraser') {
-                    // This was the start of a new line, find where it began
-                    const { tool, color, size } = lastAction;
-                    let startIndex = room.drawingHistory.length - 1;
-                    while(
-                        startIndex > 0 &&
-                        room.drawingHistory[startIndex - 1].tool === tool &&
-                        room.drawingHistory[startIndex - 1].color === color &&
-                        room.drawingHistory[startIndex - 1].size === size
-                    ) {
-                        startIndex--;
+                let lastStrokeStartIndex = -1;
+                for (let i = room.drawingHistory.length - 1; i >= 0; i--) {
+                    if ((room.drawingHistory[i].tool === 'pencil' || room.drawingHistory[i].tool === 'eraser') && room.drawingHistory[i].isStartOfLine) {
+                        lastStrokeStartIndex = i;
+                        break;
                     }
-                    room.drawingHistory.splice(startIndex);
+                }
+                if (lastStrokeStartIndex !== -1) {
+                    room.drawingHistory.splice(lastStrokeStartIndex);
                 } else {
-                    // It was a single action like 'fill'
-                    room.drawingHistory.pop();
+                    room.drawingHistory.pop(); // Fallback for single actions like fill
                 }
             }
-             // We need to rebroadcast the whole history for a reliable undo
-             io.to(roomId).emit('roomState', { ...room, drawingHistory: room.drawingHistory });
-             return; // Prevent single action broadcast
+             // On undo, we have to send the entire history back to ensure consistency
+             socket.broadcast.to(roomId).emit('drawingAction', { tool: 'undo', history: room.drawingHistory });
+             return;
         } else {
-             // For pencil/eraser, check if it's a new stroke or continuing an old one
-             if ((action.tool === 'pencil' || action.tool === 'eraser') && action.isStartOfLine) {
-                 room.drawingHistory.push(action);
-             } else if ((action.tool === 'pencil' || action.tool === 'eraser') && !action.isStartOfLine) {
-                 const lastAction = room.drawingHistory[room.drawingHistory.length - 1];
-                 if (lastAction && lastAction.tool === action.tool && lastAction.color === action.color && lastAction.size === action.size) {
-                     lastAction.points.push(...action.points);
-                 } else {
-                     // This case should ideally not happen if client logic is correct, but as a fallback...
-                     room.drawingHistory.push(action);
-                 }
-             } else {
-                 room.drawingHistory.push(action);
-             }
+             room.drawingHistory.push(action);
         }
-        // Broadcast the single action to other clients for real-time drawing
-        socket.to(roomId).emit('drawingAction', action);
+        socket.broadcast.to(roomId).emit('drawingAction', action);
     }
   });
 
@@ -309,63 +336,98 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('systemMessage', { content: `Round over! The word was: ${room.gameState.word}`});
 
     setTimeout(() => {
-        startRound(roomId);
+        if(rooms[roomId]) startRound(roomId);
     }, 5000);
   }
   
-  const endGame = (roomId) => {
+  const endGame = (roomId, message = 'Game over!') => {
     const room = rooms[roomId];
     if (!room) return;
 
     if (room.timerInterval) clearInterval(room.timerInterval);
     if (room.wordChoiceTimeout) clearTimeout(room.wordChoiceTimeout);
-
+    
+    room.finalScores = [...room.players].sort((a,b) => b.score - a.score);
     room.gameState.status = 'ended';
-    io.to(roomId).emit('finalScores', room.players.sort((a,b) => b.score - a.score));
+    io.to(roomId).emit('systemMessage', { content: message });
+    io.to(roomId).emit('finalScores', room.finalScores);
     io.to(roomId).emit('sound', 'game_over');
     io.to(roomId).emit('roomState', room);
   }
   
   socket.on('resetGame', (roomId) => {
       const room = rooms[roomId];
-      if (!room || room.players.find(p => p.id === socket.id)?.isHost !== true) return;
+      const player = room?.players.find(p => p.id === socket.id);
+      if (!room || !player || !player.isHost) return;
       
       console.log(`Resetting game for room ${roomId}`);
       startGame(roomId);
   });
 
-  socket.on('disconnect', () => {
-    console.log(`User disconnected: ${socket.id}`);
-    for (const roomId in rooms) {
-      const room = rooms[roomId];
-      const playerIndex = room.players.findIndex(p => p.id === socket.id);
-      
-      if (playerIndex !== -1) {
-        const disconnectedPlayer = room.players[playerIndex];
-        room.players.splice(playerIndex, 1);
-        
-        io.to(roomId).emit('systemMessage', { content: `${disconnectedPlayer.nickname} has left the game.` });
-        io.to(roomId).emit('sound', 'leave');
-
-        if (room.players.length === 0) {
-            delete rooms[roomId];
-            console.log(`Room ${roomId} closed because all players left.`);
-        } else {
-             if (room.players.length < 2 && room.gameState.status !== 'waiting' && room.gameState.status !== 'ended') {
-                io.to(roomId).emit('systemMessage', { content: 'Not enough players to continue. Game over.'});
-                endGame(roomId);
-            } else if (disconnectedPlayer.id === room.gameState.currentDrawerId) {
-                io.to(roomId).emit('systemMessage', { content: 'The drawer has left. Starting new round.'});
-                endRound(roomId, 'drawer_left');
-            } else if (!room.players.some(p => p.isHost)) {
-                // Promote next player to host
-                room.players[0].isHost = true;
-                io.to(roomId).emit('systemMessage', { content: `${room.players[0].nickname} is now the host.`});
-            }
-            io.to(roomId).emit('roomState', room);
-        }
+  socket.on('disconnect', (reason) => {
+    console.log(`User disconnected: ${socket.id}, reason: ${reason}`);
+    let disconnectedPlayer = null;
+    let roomId = null;
+    
+    // Find the player and room they were in
+    for (const id in rooms) {
+      const room = rooms[id];
+      const player = room.players.find(p => p.id === socket.id);
+      if (player) {
+        disconnectedPlayer = player;
+        roomId = id;
         break;
       }
+    }
+
+    if (disconnectedPlayer && roomId) {
+        const room = rooms[roomId];
+        disconnectedPlayer.connected = false;
+        io.to(roomId).emit('systemMessage', { content: `${disconnectedPlayer.nickname} has disconnected.` });
+        io.to(roomId).emit('sound', 'leave');
+        
+        // Handle drawer disconnect
+        if (room.gameState.status === 'playing' && disconnectedPlayer.id === room.gameState.currentDrawerId) {
+             io.to(roomId).emit('systemMessage', { content: 'The drawer has left. The round will end shortly.' });
+             endRound(roomId, 'drawer_left');
+        }
+
+        // Set a timeout to remove the player if they don't reconnect
+        disconnectedPlayer.disconnectTimeout = setTimeout(() => {
+            if (rooms[roomId]) {
+                const playerIndex = rooms[roomId].players.findIndex(p => p.uuid === disconnectedPlayer.uuid);
+                if (playerIndex !== -1 && !rooms[roomId].players[playerIndex].connected) {
+                    const removedPlayer = rooms[roomId].players.splice(playerIndex, 1)[0];
+                    console.log(`Permanently removed ${removedPlayer.nickname} from room ${roomId}`);
+                    
+                    if (rooms[roomId].players.length === 0) {
+                        console.log(`Room ${roomId} closed because all players left.`);
+                        if (room.timerInterval) clearInterval(room.timerInterval);
+                        if (room.wordChoiceTimeout) clearTimeout(room.wordChoiceTimeout);
+                        delete rooms[roomId];
+                        return;
+                    }
+                    io.to(roomId).emit('roomState', rooms[roomId]);
+                }
+            }
+        }, DISCONNECT_TIMEOUT);
+
+        // Promote a new host if the host disconnected
+        if (disconnectedPlayer.isHost && room.players.some(p => p.connected)) {
+            const newHost = room.players.find(p => p.connected);
+            if (newHost) {
+                newHost.isHost = true;
+                io.to(roomId).emit('systemMessage', { content: `${newHost.nickname} is now the host.` });
+            }
+        }
+        
+        // Check if game can continue
+        const activePlayers = room.players.filter(p => p.connected);
+        if (activePlayers.length < 2 && (room.gameState.status === 'playing' || room.gameState.status === 'choosing_word')) {
+            endGame(roomId, 'Not enough players to continue.');
+        }
+
+        io.to(roomId).emit('roomState', room);
     }
   });
 });
@@ -374,4 +436,3 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-    

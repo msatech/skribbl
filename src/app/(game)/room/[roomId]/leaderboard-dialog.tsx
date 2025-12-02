@@ -38,7 +38,7 @@ export default function LeaderboardDialog({ isOpen, scores, onPlayAgain, onLeave
           <ul className="space-y-2">
             {scores.map((player, index) => (
               <li
-                key={player.id}
+                key={player.uuid}
                 className={cn(
                   "flex items-center justify-between p-3 rounded-lg",
                   index === 0 && "bg-yellow-100 dark:bg-yellow-900/50 border-2 border-yellow-400",
@@ -62,21 +62,17 @@ export default function LeaderboardDialog({ isOpen, scores, onPlayAgain, onLeave
           </ul>
         </div>
         
-        <DialogFooter className="sm:justify-between gap-2">
+        <DialogFooter className="sm:justify-between flex-col sm:flex-row gap-2">
           {isHost ? (
             <Button onClick={onPlayAgain} className="w-full">
                 <Play className="mr-2 h-4 w-4"/> Play Again
             </Button>
           ) : (
-             <>
-              <p className="text-sm text-muted-foreground text-center sm:text-left flex-1">Waiting for the host to start the next game...</p>
-              <div className="flex gap-2 w-full sm:w-auto">
-                 <Button onClick={onLeave} variant="outline" className="w-full sm:w-auto">
-                    <LogOut className="mr-2 h-4 w-4"/> Leave
-                </Button>
-              </div>
-            </>
+            <p className="text-sm text-muted-foreground text-center sm:text-left flex-1">Waiting for the host to start the next game...</p>
           )}
+          <Button onClick={onLeave} variant="outline" className="w-full sm:w-auto">
+              <LogOut className="mr-2 h-4 w-4"/> Leave
+          </Button>
         </DialogFooter>
        
       </DialogContent>
