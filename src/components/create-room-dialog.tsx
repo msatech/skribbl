@@ -21,6 +21,8 @@ import { Switch } from '@/components/ui/switch';
 import { getSuggestedRoomName } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
 import { useSocket } from '@/contexts/socket-context';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { FormControl } from './ui/form';
 
 const RoomSettingsSchema = z.object({
   roomName: z.string().min(3, 'Too short').max(30, 'Too long'),
@@ -28,6 +30,10 @@ const RoomSettingsSchema = z.object({
   rounds: z.coerce.number().min(1).max(10),
   drawTime: z.coerce.number().min(30).max(120),
   maxPlayers: z.coerce.number().min(2).max(12),
+  wordCount: z.coerce.number().min(1).max(5),
+  wordLength: z.coerce.number().min(0).max(10),
+  gameMode: z.enum(['normal', 'combination']),
+  hints: z.coerce.number().min(0).max(5),
 });
 
 type CreateRoomDialogProps = {
@@ -51,6 +57,10 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
       rounds: 3,
       drawTime: 80,
       maxPlayers: 8,
+      wordCount: 1,
+      wordLength: 0,
+      gameMode: 'normal',
+      hints: 2,
     },
   });
 
@@ -133,6 +143,39 @@ export default function CreateRoomDialog({ isOpen, setIsOpen, nickname }: Create
             <Label htmlFor="maxPlayers" className="text-right">Max Players</Label>
             <Input id="maxPlayers" type="number" {...form.register('maxPlayers')} className="col-span-3" />
             {form.formState.errors.maxPlayers && <p className="col-span-4 text-xs text-destructive text-right">{form.formState.errors.maxPlayers.message}</p>}
+          </div>
+
+           <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="wordLength" className="text-right">Word Length</Label>
+            <Input id="wordLength" type="number" {...form.register('wordLength')} className="col-span-3" placeholder="0 for any"/>
+            {form.formState.errors.wordLength && <p className="col-span-4 text-xs text-destructive text-right">{form.formState.errors.wordLength.message}</p>}
+          </div>
+
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label className="text-right">Game Mode</Label>
+            <Select onValueChange={(value) => form.setValue('gameMode', value as 'normal' | 'combination')} defaultValue={form.getValues('gameMode')}>
+                <FormControl>
+                    <SelectTrigger className="col-span-3">
+                        <SelectValue placeholder="Select game mode" />
+                    </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                    <SelectItem value="normal">Normal</SelectItem>
+                    <SelectItem value="combination">Combination</SelectItem>
+                </SelectContent>
+            </Select>
+          </div>
+          
+           <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="wordCount" className="text-right">Word Count</Label>
+            <Input id="wordCount" type="number" {...form.register('wordCount')} className="col-span-3" disabled={form.watch('gameMode') !== 'combination'}/>
+            {form.formState.errors.wordCount && <p className="col-span-4 text-xs text-destructive text-right">{form.formState.errors.wordCount.message}</p>}
+          </div>
+
+           <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="hints" className="text-right">Hints</Label>
+            <Input id="hints" type="number" {...form.register('hints')} className="col-span-3" />
+            {form.formState.errors.hints && <p className="col-span-4 text-xs text-destructive text-right">{form.formState.errors.hints.message}</p>}
           </div>
 
           <div className="flex items-center justify-end space-x-2 pt-4">

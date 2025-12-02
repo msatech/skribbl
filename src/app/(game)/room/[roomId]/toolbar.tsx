@@ -15,6 +15,7 @@ type ToolbarProps = {
   currentTool: string;
   setCurrentTool: (tool: string) => void;
   onUndo: () => void;
+  canUndo: boolean;
 };
 
 const colors = [
@@ -25,25 +26,25 @@ const colors = [
 
 export default function Toolbar({ 
     brushColor, setBrushColor, brushSize, setBrushSize, onClear,
-    currentTool, setCurrentTool, onUndo
+    currentTool, setCurrentTool, onUndo, canUndo
 }: ToolbarProps) {
   return (
-    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-card/80 backdrop-blur-sm border rounded-lg p-2 flex items-center gap-2 shadow-lg">
+    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-card/80 backdrop-blur-sm border rounded-lg p-1 sm:p-2 flex items-center gap-1 sm:gap-2 shadow-lg">
       <ToggleGroup type="single" value={currentTool} onValueChange={(value) => value && setCurrentTool(value)} className="gap-1">
         <ToggleGroupItem value="pencil" aria-label="Pencil">
-          <Pencil className="h-5 w-5"/>
+          <Pencil className="h-4 w-4 sm:h-5 sm:w-5"/>
         </ToggleGroupItem>
         <ToggleGroupItem value="eraser" aria-label="Eraser">
-          <Eraser className="h-5 w-5" />
+          <Eraser className="h-4 w-4 sm:h-5 sm:w-5" />
         </ToggleGroupItem>
         <ToggleGroupItem value="fill" aria-label="Fill">
-          <PaintBucket className="h-5 w-5" />
+          <PaintBucket className="h-4 w-4 sm:h-5 sm:w-5" />
         </ToggleGroupItem>
       </ToggleGroup>
       
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="icon" title="Brush color">
+          <Button variant="outline" size="icon" className="h-8 w-8 sm:h-10 sm:w-10" title="Brush color">
             <Circle className="h-5 w-5" style={{ fill: brushColor, color: brushColor }}/>
           </Button>
         </PopoverTrigger>
@@ -63,8 +64,8 @@ export default function Toolbar({
       
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="icon" title="Brush size" disabled={currentTool === 'fill'}>
-            <Brush className="h-5 w-5" />
+          <Button variant="outline" size="icon" className="h-8 w-8 sm:h-10 sm:w-10" title="Brush size" disabled={currentTool === 'fill'}>
+            <Brush className="h-4 w-4 sm:h-5 sm:w-5" />
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-40 p-4">
@@ -78,12 +79,12 @@ export default function Toolbar({
         </PopoverContent>
       </Popover>
 
-      <Button variant="outline" size="icon" onClick={onUndo} title="Undo">
-        <Undo className="h-5 w-5" />
+      <Button variant="outline" size="icon" onClick={onUndo} title="Undo" disabled={!canUndo} className="h-8 w-8 sm:h-10 sm:w-10">
+        <Undo className="h-4 w-4 sm:h-5 sm:w-5" />
       </Button>
 
-      <Button variant="destructive" size="icon" onClick={onClear} title="Clear canvas">
-        <Trash2 className="h-5 w-5" />
+      <Button variant="destructive" size="icon" onClick={onClear} title="Clear canvas" className="h-8 w-8 sm:h-10 sm:w-10">
+        <Trash2 className="h-4 w-4 sm:h-5 sm:w-5" />
       </Button>
     </div>
   );

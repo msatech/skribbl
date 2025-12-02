@@ -18,6 +18,10 @@ export type GameSettings = {
   rounds: number;
   drawTime: number;
   maxPlayers: number;
+  wordCount: number;
+  wordLength: number;
+  gameMode: 'normal' | 'combination';
+  hints: number;
 };
 
 export type GameState = {
@@ -26,6 +30,7 @@ export type GameState = {
   currentDrawer: string | null;
   currentWord: string;
   timer: number;
+  hintsUsed: number;
 };
 
 export type Room = {
@@ -36,6 +41,7 @@ export type Room = {
   settings: GameSettings;
   gameState: GameState;
   drawingData: any[];
+  guessedPlayers?: Set<string>;
 };
 
 export type PublicRoom = {
