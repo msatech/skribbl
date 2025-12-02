@@ -10,7 +10,7 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import {z} from 'zod';
 
 const NameTypeSchema = z.object({
   category: z.enum(['nickname', 'room name']).describe('The category of name to generate: nickname or room name.'),
