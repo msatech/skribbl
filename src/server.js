@@ -140,7 +140,8 @@ app.prepare().then(() => {
       if (!room || room.players.length < 2) return;
 
       room.gameState.status = 'playing';
-      room.gameState.currentRound = 0; 
+      room.gameState.currentRound = 1; 
+      room.gameState.turn = -1; // Will be incremented to 0 in startRound
       room.players.forEach(p => p.score = 0);
       io.to(roomId).emit('roomState', room);
       startRound(roomId);
@@ -149,13 +150,13 @@ app.prepare().then(() => {
     const startRound = (roomId) => {
         const room = rooms[roomId];
         if (!room || room.gameState.status === 'ended') return;
-
+        
         if (room.timerInterval) clearInterval(room.timerInterval);
 
-        const currentDrawerIndex = room.players.findIndex(p => p.id === room.gameState.currentDrawer);
-        const nextDrawerIndex = (currentDrawerIndex + 1) % room.players.length;
+        room.gameState.turn = (room.gameState.turn + 1);
 
-        if (nextDrawerIndex === 0) {
+        if (room.gameState.turn >= room.players.length) {
+            room.gameState.turn = 0;
             room.gameState.currentRound += 1;
         }
         
@@ -164,9 +165,9 @@ app.prepare().then(() => {
             return;
         }
 
-        const nextDrawer = room.players[nextDrawerIndex];
+        const nextDrawer = room.players[room.gameState.turn];
         if (!nextDrawer) {
-            endGame(roomId);
+            endGame(roomId); // Should not happen with correct logic
             return;
         }
         
@@ -180,7 +181,7 @@ app.prepare().then(() => {
 
         const currentDrawerNickname = nextDrawer.nickname || 'Someone';
         io.to(roomId).emit('systemMessage', { content: `${currentDrawerNickname} is choosing a word...` });
-
+        
         const wordChoices = getShuffledWords(3, room.settings, roomId);
         io.to(nextDrawer.id).emit('chooseWord', wordChoices);
     };
@@ -256,10 +257,6 @@ app.prepare().then(() => {
     };
 
     socket.on('startGame', ({ roomId }) => {
-      const room = rooms[roomId];
-      if (!room) return;
-      room.gameState.currentRound = 0;
-      room.gameState.currentDrawer = null;
       startGame(roomId);
     });
 
@@ -314,8 +311,8 @@ app.prepare().then(() => {
           if (!room.gameState.guessedPlayers.includes(socket.id)) {
             
             const timeBonus = Math.floor(room.gameState.timer * 1.5);
-            const guessersCount = room.players.length - 1 - (room.gameState.currentDrawer ? 1 : 0);
-            const orderBonus = Math.max(0, (guessersCount - room.gameState.guessedPlayers.length -1) * 50);
+            const guessersCount = room.players.filter(p => p.id !== room.gameState.currentDrawer).length;
+            const orderBonus = Math.max(0, (guessersCount - room.gameState.guessedPlayers.length - 1) * 50);
             const points = 100 + timeBonus + orderBonus;
             player.score += points;
             
@@ -328,8 +325,8 @@ app.prepare().then(() => {
             io.to(roomId).emit('systemMessage', { content: `${player.nickname} guessed the word!` });
             io.to(roomId).emit('roomState', room);
 
-            const guessers = room.players.filter(p => p.id !== room.gameState.currentDrawer);
-            if (guessers.length > 0 && room.gameState.guessedPlayers.length >= guessers.length) {
+            const allGuessers = room.players.filter(p => p.id !== room.gameState.currentDrawer);
+            if (allGuessers.length > 0 && room.gameState.guessedPlayers.length >= allGuessers.length) {
               endRound(roomId, 'all_guessed');
             }
           }
@@ -375,18 +372,21 @@ app.prepare().then(() => {
           if (room.players.length === 0) {
             if (room.timerInterval) clearInterval(room.timerInterval);
             delete rooms[roomId];
-            io.emit('publicRoomsUpdate', getPublicRooms());
+            if (!room.isPrivate) {
+                io.emit('publicRoomsUpdate', getPublicRooms());
+            }
             break;
-          }
-
-          if (removedPlayer.isHost && room.players.length > 0) {
-            room.players[0].isHost = true;
           }
 
           if (room.gameState.status !== 'waiting' && room.players.length < 2) {
              endGame(roomId);
-          } else if (room.gameState.status !== 'waiting' && removedPlayer.id === room.gameState.currentDrawer) {
-             endRound(roomId, 'drawer_left');
+          } else if (removedPlayer.isHost) {
+             // If host leaves, assign a new host
+             room.players[0].isHost = true;
+          }
+          
+          if (room.gameState.status !== 'waiting' && removedPlayer.id === room.gameState.currentDrawer) {
+              endRound(roomId, 'drawer_left');
           }
           
           io.to(roomId).emit('roomState', room);
@@ -409,5 +409,4 @@ app.prepare().then(() => {
       process.exit(1);
     });
 });
-
     

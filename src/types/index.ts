@@ -28,6 +28,7 @@ export type GameSettings = {
 export type GameState = {
   status: 'waiting' | 'choosing_word' | 'playing' | 'ended_round' | 'ended';
   currentRound: number;
+  turn: number; // Index of the current player in the players array
   currentDrawer: string | null;
   currentWord: string;
   timer: number;
