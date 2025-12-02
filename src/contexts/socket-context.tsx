@@ -37,7 +37,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [finalScores, setFinalScores] = useState<Player[]>([]);
-  const { playSound, isMuted, toggleMute } = useAudio();
+  const { playSound } = useAudio();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -56,7 +56,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     socketInstance.on('disconnect', () => {
       console.log('Disconnected from socket server');
       setIsConnected(false);
-      setRoom(null); // Clear room state on disconnect
+      setRoom(null);
       setChatMessages(prev => [...prev, { type: 'system', content: 'You have been disconnected. Attempting to reconnect...' }]);
     });
     
@@ -77,7 +77,6 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     
     const handleRoomState = (newRoomState: Room) => {
         setRoom(prevRoom => {
-            // This logic is crucial for undo to work correctly without a full canvas redraw
             if (prevRoom && newRoomState.drawingHistory.length < prevRoom.drawingHistory.length) {
                 return { ...newRoomState, drawingHistory: newRoomState.drawingHistory };
             }
@@ -99,7 +98,6 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     const handleDrawingAction = (action: DrawingAction) => {
       setRoom(prevRoom => {
         if (!prevRoom) return null;
-        // The drawer handles their own drawing optimistically, so we ignore actions from the server if we are the drawer.
         if (socket.id === prevRoom.gameState.currentDrawerId) return prevRoom;
 
         let newHistory = [...prevRoom.drawingHistory];
@@ -110,13 +108,17 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
             if (action.isStartOfLine) {
                 newHistory.push(action);
             } else {
-                const lastAction = newHistory[newHistory.length - 1];
-                // Ensure the last action is a line and matches the current tool properties
-                if (lastAction && (lastAction.tool === 'pencil' || lastAction.tool === 'eraser') && lastAction.tool === action.tool && lastAction.color === action.color && lastAction.size === action.size) {
-                    (lastAction as Line).points.push(...action.points);
+                const lastStroke = newHistory.find(a => (a.tool === 'pencil' || a.tool === 'eraser') && a.isStartOfLine);
+                if(lastStroke && (lastStroke.tool === 'pencil' || lastStroke.tool === 'eraser')) {
+                  const lastPoint = lastStroke.points[lastStroke.points.length - 1];
+                  const newPoints = action.points;
+                  if (lastPoint && newPoints.length > 0 && lastPoint.x === newPoints[0].x && lastPoint.y === newPoints[0].y) {
+                    lastStroke.points.push(...newPoints.slice(1));
+                  } else {
+                     lastStroke.points.push(...newPoints);
+                  }
                 } else {
-                    // Fallback if the last action isn't what we expect
-                    newHistory.push(action);
+                   newHistory.push(action);
                 }
             }
         } else {

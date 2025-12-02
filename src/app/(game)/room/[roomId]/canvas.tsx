@@ -10,7 +10,7 @@ export type Line = {
   points: DrawingPoint[];
   color: string;
   size: number;
-  isStartOfLine?: boolean; // Used to signal a new stroke to the server
+  isStartOfLine?: boolean; 
 }
 type Fill = {
   tool: 'fill';
@@ -33,6 +33,7 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
   const [brushSize, setBrushSize] = useState(5);
   const [currentTool, setCurrentTool] = useState<'pencil' | 'eraser' | 'fill'>('pencil');
   
+  const lastPointRef = useRef<DrawingPoint | null>(null);
   const getContext = useCallback(() => canvasRef.current?.getContext('2d', { willReadFrequently: true }), []);
   
   const redrawCanvas = useCallback((history: DrawingAction[]) => {
@@ -95,32 +96,31 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
   };
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDrawer) return;
-    const { x, y } = getCoords(e);
-    const ctx = getContext();
-    if (!ctx) return;
+    if (!isDrawer || currentTool === 'fill') return;
     
-    if (currentTool === 'pencil' || currentTool === 'eraser') {
-      setIsDrawing(true);
-      const color = currentTool === 'eraser' ? '#FFFFFF' : brushColor;
-      const newLine: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize, isStartOfLine: true };
-      
-      // Optimistic update for the drawer
-      applyAction(ctx, newLine);
+    const { x, y } = getCoords(e);
+    setIsDrawing(true);
 
-      socket?.emit('drawingAction', { roomId, action: newLine });
+    const color = currentTool === 'eraser' ? '#FFFFFF' : brushColor;
+    const newLine: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize, isStartOfLine: true };
+    
+    const ctx = getContext();
+    if(ctx) {
+        applyAction(ctx, newLine);
     }
-    else if (currentTool === 'fill') {
-       handleFill(x, y);
-    }
+    
+    socket?.emit('drawingAction', { roomId, action: newLine });
+    lastPointRef.current = { x, y };
   };
   
-  const handleFill = (x: number, y: number) => {
+  const handleFill = (e: React.MouseEvent) => {
+    if(!isDrawer || currentTool !== 'fill') return;
+    const { x, y } = getCoords(e);
+
     const color = brushColor;
     const fillAction: Fill = { tool: 'fill', x, y, color };
     const ctx = getContext();
 
-    // Optimistic update
     if (ctx) {
       applyAction(ctx, fillAction);
     }
@@ -130,35 +130,28 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
   
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing || !isDrawer) return;
-    const ctx = getContext();
-    if (!ctx) return;
     
     const { x, y } = getCoords(e);
+    const lastPoint = lastPointRef.current;
+    if (!lastPoint) return;
     
     const color = currentTool === 'eraser' ? '#FFFFFF' : brushColor;
-    // We emit an action with a single point.
-    const drawAction: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize, isStartOfLine: false };
-    
-    // Create a temporary line for local rendering to include the previous point
-    const tempLineForLocalRender: Line = { 
-        tool: currentTool, 
-        points: [{x, y}], 
-        color: color,
-        size: brushSize,
-        isStartOfLine: false
-    };
+    const lineSegment: Line = { tool: currentTool, points: [lastPoint, { x, y }], color, size: brushSize, isStartOfLine: false };
 
-    // Optimistic update for the drawer
-    applyAction(ctx, tempLineForLocalRender);
+    const ctx = getContext();
+    if(ctx) {
+        applyAction(ctx, lineSegment);
+    }
 
-    socket?.emit('drawingAction', { roomId, action: drawAction });
+    socket?.emit('drawingAction', { roomId, action: lineSegment });
+    lastPointRef.current = { x, y };
   };
 
   const stopDrawing = () => {
     if (!isDrawing || !isDrawer) return;
     setIsDrawing(false);
+    lastPointRef.current = null;
     
-    // We get a fresh context to ensure line joins are handled correctly after a pause
     const ctx = getContext();
     if(ctx) {
         ctx.beginPath();
@@ -176,11 +169,9 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
     ctx.beginPath();
     
     if (line.points.length === 1) {
-        // For a single point (like from startDrawing or a simple click), we draw a tiny circle
         ctx.moveTo(line.points[0].x, line.points[0].y);
         ctx.lineTo(line.points[0].x, line.points[0].y);
     } else {
-        // For a multi-point line
         ctx.moveTo(line.points[0].x, line.points[0].y);
         for (let i = 1; i < line.points.length; i++) {
             ctx.lineTo(line.points[i].x, line.points[i].y);
@@ -272,7 +263,6 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
   const handleClear = () => {
     const clearAction = { tool: 'clear' };
     const ctx = getContext();
-    // Optimistic update
     if (ctx) {
       applyAction(ctx, clearAction);
     }
@@ -294,6 +284,7 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
         onTouchStart={startDrawing}
         onTouchEnd={stopDrawing}
         onTouchMove={draw}
+        onClick={handleFill}
         className="w-full h-full bg-white rounded-b-lg"
         style={{ cursor: isDrawer ? (currentTool === 'pencil' ? 'crosshair' : (currentTool === 'eraser' ? 'cell' : 'copy')) : 'not-allowed' }}
       />
