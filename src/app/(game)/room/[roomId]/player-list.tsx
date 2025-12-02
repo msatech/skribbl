@@ -30,10 +30,10 @@ export default function PlayerList({ players, currentDrawerId, guessedPlayerIds 
         <ScrollArea className="h-full">
           <ul className="space-y-3">
             <TooltipProvider>
-            {sortedPlayers.map((player, index) => {
+            {sortedPlayers.map((player) => {
               const hasGuessed = guessedPlayerIds.includes(player.id);
               return (
-              <li key={`${player.id}-${index}`} className={cn(
+              <li key={player.id} className={cn(
                   "flex items-center justify-between p-2 rounded-md bg-secondary transition-colors",
                   hasGuessed && "bg-green-100 dark:bg-green-900/30"
               )}>

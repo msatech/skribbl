@@ -52,9 +52,6 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
       performFloodFill(ctx, action.x, action.y, hexToRgb(action.color));
     } else if (action.tool === 'clear') {
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    } else if (action.tool === 'undo') {
-      // The server will send the new history, so we just redraw.
-      // This case is handled by the drawingHistory prop update.
     }
   }, []);
   
@@ -122,6 +119,7 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
     const { x, y } = getCoords(e);
     
     const color = currentTool === 'eraser' ? '#FFFFFF' : brushColor;
+    // We emit an action with a single point. The server will aggregate them.
     const drawAction: Line = { tool: currentTool, points: [{ x, y }], color, size: brushSize };
     
     socket?.emit('drawingAction', { roomId, action: drawAction });
@@ -130,16 +128,21 @@ export default function Canvas({ isDrawer, drawingHistory }: CanvasProps) {
   const stopDrawing = () => {
     if (!isDrawing || !isDrawer) return;
     setIsDrawing(false);
-    // Send a "line break" if needed by server logic
+    // Send a "line break" if needed by server logic.
+    // For now, we can just stop drawing. The server aggregates points into strokes.
+    // A more advanced implementation could send a specific 'endStroke' event.
   };
 
   const drawSingleLine = (ctx: CanvasRenderingContext2D, line: Line) => {
     if (line.points.length === 0) return;
     ctx.beginPath();
     ctx.moveTo(line.points[0].x, line.points[0].y);
+
     for (let i = 1; i < line.points.length; i++) {
-      ctx.lineTo(line.points[i].x, line.points[i].y);
+        const point = line.points[i];
+        ctx.lineTo(point.x, point.y);
     }
+    
     ctx.strokeStyle = line.tool === 'eraser' ? '#FFFFFF' : line.color;
     ctx.lineWidth = line.size;
     ctx.lineCap = 'round';

@@ -55,26 +55,29 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     socketInstance.on('disconnect', () => {
       console.log('Disconnected from socket server');
       setIsConnected(false);
-      setRoom(null);
+      setRoom(null); // Clear room state on disconnect
       setChatMessages(prev => [...prev, { type: 'system', content: 'You have been disconnected. Attempting to reconnect...' }]);
     });
     
     socketInstance.on('connect_error', (err) => {
         console.error('Connection Error:', err.message);
+        toast({ variant: 'destructive', title: 'Connection Error', description: 'Could not connect to the game server.' });
     });
 
     return () => {
       socketInstance.disconnect();
     };
-  }, []);
+  }, [toast]);
   
   useEffect(() => {
     if(!socket) return;
     
     const handleRoomState = (newRoomState: Room) => {
-        // When drawing history is cleared or undone, the server sends the whole new history.
-        // We can directly set it.
+        // Full state update from server
         setRoom(newRoomState);
+        if(newRoomState.gameState.status === 'waiting') {
+            setChatMessages([]);
+        }
     };
 
     const handleSystemMessage = (message: { content: string, isCorrectGuess?: boolean }) => {
@@ -93,12 +96,12 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
         if (action.tool === 'clear') {
           newHistory = [];
         } else if (action.tool === 'undo') {
-            // Undo logic on the server is now the source of truth.
-            // Client-side prediction of undo is removed to avoid desync.
-            // The server will send a new roomState with the updated history.
+           // Server now sends the full history on undo, so this path is less critical.
+           // This logic can be a simple pop for responsiveness before state sync.
+           newHistory.pop();
         } else if (action.tool === 'pencil' || action.tool === 'eraser') {
           const lastAction = newHistory[newHistory.length - 1];
-          // If the last action was a point in the same continuous stroke, append to it.
+          // If the last action was part of the same continuous stroke, append to its points.
           if (isDrawingContinuousLine(lastAction, action)) {
             (lastAction as Line).points.push(...(action as Line).points);
           } else {
@@ -106,7 +109,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
             newHistory.push(action);
           }
         } else {
-          // For 'fill', just add the action. Redraw will handle it.
+          // For 'fill' and other single actions.
           newHistory.push(action);
         }
         
@@ -118,9 +121,8 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
         if (!lastAction || lastAction.tool !== currentAction.tool) return false;
         if (lastAction.tool !== 'pencil' && lastAction.tool !== 'eraser') return false;
         if (currentAction.tool !== 'pencil' && currentAction.tool !== 'eraser') return false;
-        // This is a simple check. A more robust system might use stroke IDs.
-        // It assumes sequential points of the same tool are part of the same line.
-        return true;
+        // Check if color and size are the same for a continuous stroke
+        return lastAction.color === currentAction.color && lastAction.size === currentAction.size;
     }
 
 

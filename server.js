@@ -64,27 +64,38 @@ io.on('connection', (socket) => {
   });
 
   socket.on('joinRoom', ({ roomId, nickname }) => {
-    if (!rooms[roomId]) {
+    const room = rooms[roomId];
+    if (!room) {
       return socket.emit('error', { message: 'Room not found.' });
     }
-    if (rooms[roomId].players.length >= rooms[roomId].settings.maxPlayers) {
-      return socket.emit('error', { message: 'Room is full.' });
+
+    // Check if player with same nickname is already in the room (and perhaps disconnected)
+    const existingPlayer = room.players.find(p => p.nickname === nickname);
+
+    if (existingPlayer) {
+        // Player is rejoining, update their socket ID
+        existingPlayer.id = socket.id;
+        console.log(`${nickname} re-joined room: ${roomId}`);
+    } else {
+        // New player joining
+        if (room.players.length >= room.settings.maxPlayers) {
+            return socket.emit('error', { message: 'Room is full.' });
+        }
+        
+        const player = {
+            id: socket.id,
+            nickname,
+            score: 0,
+            isHost: false,
+        };
+        room.players.push(player);
+        io.to(roomId).emit('systemMessage', { content: `${nickname} has joined the game.`});
+        console.log(`${nickname} joined room: ${roomId}`);
     }
     
-    const player = {
-      id: socket.id,
-      nickname,
-      score: 0,
-      isHost: false,
-    };
-
     socket.join(roomId);
-    rooms[roomId].players.push(player);
-    
-    io.to(roomId).emit('roomState', rooms[roomId]);
-    io.to(roomId).emit('systemMessage', { content: `${nickname} has joined the game.`});
     socket.emit('joinedRoom', roomId);
-    console.log(`${nickname} joined room: ${roomId}`);
+    io.to(roomId).emit('roomState', room);
   });
 
   socket.on('startGame', (roomId) => {
@@ -127,6 +138,7 @@ io.on('connection', (socket) => {
     room.gameState.word = '';
     room.gameState.guessedPlayerIds = [];
     room.drawingHistory = [];
+    io.to(roomId).emit('drawingAction', { tool: 'clear' });
     
     const wordChoices = getShuffledWords(3);
     
@@ -219,7 +231,7 @@ io.on('connection', (socket) => {
       io.to(roomId).emit('sound', 'correct_guess');
 
       const allGuessed = room.gameState.guessedPlayerIds.length === room.players.length - 1;
-      if (allGuessed) {
+      if (allGuessed && room.players.length > 1) {
           const drawer = room.players.find(p => p.id === room.gameState.currentDrawerId);
           if (drawer) drawer.score += 200;
           room.players.forEach(p => {
@@ -240,22 +252,44 @@ io.on('connection', (socket) => {
         if (action.tool === 'clear') {
             room.drawingHistory = [];
         } else if (action.tool === 'undo') {
-            // More robust undo logic can be implemented here if needed
-            const lastLineStartIndex = room.drawingHistory.findLastIndex(a => a.tool === 'pencil' || a.tool === 'eraser');
-            if (lastLineStartIndex !== -1) {
-              const lineStart = room.drawingHistory[lastLineStartIndex];
-              if(lineStart.points.length > 1) { // It's a continuous line
-                 room.drawingHistory = room.drawingHistory.slice(0, lastLineStartIndex);
-              } else { // It's a single dot or start of a line
-                 room.drawingHistory.pop();
-              }
-            } else {
-               room.drawingHistory.pop();
+            // Find the last continuous line or single action and remove it
+            let lastActionIndex = -1;
+            for (let i = room.drawingHistory.length - 1; i >= 0; i--) {
+                const currentAction = room.drawingHistory[i];
+                if (currentAction.tool === 'pencil' || currentAction.tool === 'eraser') {
+                    // Check if it's the start of a new line segment
+                     if (currentAction.points.length > 0) {
+                        lastActionIndex = i;
+                        break;
+                     }
+                } else {
+                     lastActionIndex = i;
+                     break;
+                }
             }
+             if (lastActionIndex !== -1) {
+                // If it's a line, remove all parts of that line
+                 const actionToRemove = room.drawingHistory[lastActionIndex];
+                 if(actionToRemove.tool === 'pencil' || actionToRemove.tool === 'eraser') {
+                     const color = actionToRemove.color;
+                     const size = actionToRemove.size;
+                     let i = lastActionIndex;
+                     while(i >= 0 && room.drawingHistory[i].tool === actionToRemove.tool && room.drawingHistory[i].color === color && room.drawingHistory[i].size === size) {
+                         i--;
+                     }
+                     room.drawingHistory.splice(i + 1);
+                 } else {
+                    room.drawingHistory.splice(lastActionIndex);
+                 }
 
+             }
+             // We need to rebroadcast the whole history for a reliable undo
+             io.to(roomId).emit('roomState', { ...room, drawingHistory: room.drawingHistory });
+             return; // Prevent single action broadcast
         } else {
             room.drawingHistory.push(action);
         }
+        // Broadcast the single action to other clients
         socket.to(roomId).emit('drawingAction', action);
     }
   });
@@ -310,22 +344,21 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('systemMessage', { content: `${disconnectedPlayer.nickname} has left the game.` });
         io.to(roomId).emit('sound', 'leave');
 
-        if (room.players.length < 2 && room.gameState.status !== 'waiting' && room.gameState.status !== 'ended') {
-            io.to(roomId).emit('systemMessage', { content: 'Not enough players to continue. Game over.'});
-            endGame(roomId);
-        } else if (disconnectedPlayer.id === room.gameState.currentDrawerId) {
-            io.to(roomId).emit('systemMessage', { content: 'The drawer has left. Starting new round.'});
-            endRound(roomId, 'drawer_left');
-        } else if (room.players.length > 0 && !room.players.some(p => p.isHost)) {
-            // Promote next player to host
-            room.players[0].isHost = true;
-            io.to(roomId).emit('systemMessage', { content: `${room.players[0].nickname} is now the host.`});
-        }
-        
         if (room.players.length === 0) {
             delete rooms[roomId];
             console.log(`Room ${roomId} closed because all players left.`);
         } else {
+             if (room.players.length < 2 && room.gameState.status !== 'waiting' && room.gameState.status !== 'ended') {
+                io.to(roomId).emit('systemMessage', { content: 'Not enough players to continue. Game over.'});
+                endGame(roomId);
+            } else if (disconnectedPlayer.id === room.gameState.currentDrawerId) {
+                io.to(roomId).emit('systemMessage', { content: 'The drawer has left. Starting new round.'});
+                endRound(roomId, 'drawer_left');
+            } else if (!room.players.some(p => p.isHost)) {
+                // Promote next player to host
+                room.players[0].isHost = true;
+                io.to(roomId).emit('systemMessage', { content: `${room.players[0].nickname} is now the host.`});
+            }
             io.to(roomId).emit('roomState', room);
         }
         break;
@@ -338,5 +371,4 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
     
