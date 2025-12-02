@@ -1,3 +1,4 @@
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -10,7 +11,7 @@ app.use(cors());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: '*', // Allow all origins
     methods: ['GET', 'POST'],
   },
 });
@@ -129,12 +130,12 @@ io.on('connection', (socket) => {
     
     const wordChoices = getShuffledWords(3);
     
+    // Send word choices ONLY to the drawer
+    io.to(drawer.id).emit('chooseWord', wordChoices);
+    
     io.to(roomId).emit('roomState', room);
     io.to(roomId).emit('systemMessage', { content: `${drawer.nickname} is choosing a word...` });
     io.to(roomId).emit('sound', 'new_round');
-
-    // Send word choices ONLY to the drawer
-    io.to(drawer.id).emit('chooseWord', wordChoices);
 
     // Word choice timeout
     room.wordChoiceTimeout = setTimeout(() => {
@@ -337,3 +338,5 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+    
