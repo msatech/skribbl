@@ -25,8 +25,8 @@ export default function PlayerList({ players, currentDrawerId }: PlayerListProps
       <CardContent className="flex-grow overflow-auto p-3">
         <ul className="space-y-3">
           <TooltipProvider>
-          {sortedPlayers.map((player) => (
-            <li key={player.id} className="flex items-center justify-between p-2 rounded-md bg-secondary">
+          {sortedPlayers.map((player, index) => (
+            <li key={`${player.id}-${index}`} className="flex items-center justify-between p-2 rounded-md bg-secondary">
               <div className="flex items-center gap-3">
                 <Avatar className="h-8 w-8">
                   <AvatarFallback>{player.nickname.charAt(0)}</AvatarFallback>
